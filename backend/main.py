@@ -177,8 +177,8 @@ The used_arxiv_ids list must only include arXiv IDs of papers you actually drew 
         answer_text = parsed["answer"]
         used_ids = set(parsed.get("used_arxiv_ids", []))
     except (json.JSONDecodeError, KeyError):
-        # Fall back gracefully rather than crash if the model doesn't
-        # follow the format for some reason
+        #fall back gracefully rather than crash if the model doesn't
+        #follow the format for some reason
         answer_text = completion.choices[0].message.content
         used_ids = {c["arxiv_id"] for c in top_chunks}
 
