@@ -91,3 +91,103 @@ def search(request: SearchRequest):
             break
 
     return results
+
+from groq import Groq
+
+groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+
+class AskRequest(BaseModel):
+    question: str
+    category: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+class Source(BaseModel):
+    title: str
+    arxiv_id: str
+    section: Optional[str]
+
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: List[Source]
+
+
+@app.post("/ask", response_model=AskResponse)
+def ask(request: AskRequest):
+    query_embedding = embedder.encode(request.question).tolist()
+
+    candidates = supabase.rpc(
+        "match_chunks",
+        {
+            "query_embedding": query_embedding,
+            "match_count": CANDIDATE_POOL_SIZE,
+            "filter_category": request.category,
+            "filter_date_from": request.date_from,
+            "filter_date_to": request.date_to,
+        },
+    ).execute().data
+
+    if not candidates:
+        return AskResponse(
+            answer="I couldn't find anything in the indexed papers relevant to that question.",
+            sources=[],
+        )
+
+    pairs = [[request.question, c["content"]] for c in candidates]
+    scores = reranker.predict(pairs)
+    for candidate, score in zip(candidates, scores):
+        candidate["rerank_score"] = float(score)
+    candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
+
+    top_chunks = candidates[:FINAL_RESULT_COUNT]
+    #most relevant last, right next to the question, counters the lost-in-the-middle effect where models attend better to context edges
+    top_chunks.reverse()
+
+    context_blocks = []
+    for c in top_chunks:
+        context_blocks.append(
+            f"[Source: \"{c['title']}\" (arXiv:{c['arxiv_id']}), section: {c['section'] or 'unknown'}]\n{c['content']}"
+        )
+    context_text = "\n\n".join(context_blocks)
+
+    prompt = f"""Answer the question using ONLY the paper excerpts below. Paraphrase in your own words rather than quoting long passages. If the excerpts don't contain the answer, say so plainly rather than guessing.
+
+Paper excerpts:
+{context_text}
+
+Question: {request.question}
+
+Respond with ONLY a JSON object in this exact shape, no other text:
+{{"answer": "your answer here", "used_arxiv_ids": ["id1", "id2"]}}
+The used_arxiv_ids list must only include arXiv IDs of papers you actually drew on to answer — not every paper given as context, only the ones that genuinely informed your answer."""
+
+    completion = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+
+    import json
+    try:
+        parsed = json.loads(completion.choices[0].message.content)
+        answer_text = parsed["answer"]
+        used_ids = set(parsed.get("used_arxiv_ids", []))
+    except (json.JSONDecodeError, KeyError):
+        # Fall back gracefully rather than crash if the model doesn't
+        # follow the format for some reason
+        answer_text = completion.choices[0].message.content
+        used_ids = {c["arxiv_id"] for c in top_chunks}
+
+    seen = set()
+    sources = []
+    for c in top_chunks:
+        if c["arxiv_id"] not in used_ids or c["arxiv_id"] in seen:
+            continue
+        seen.add(c["arxiv_id"])
+        sources.append(Source(title=c["title"], arxiv_id=c["arxiv_id"], section=c["section"]))
+
+    return AskResponse(answer=answer_text, sources=sources)
