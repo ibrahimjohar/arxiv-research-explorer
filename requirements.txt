@@ -1,0 +1,6 @@
+requests
+feedparser
+supabase
+python-dotenv
+pymupdf
+sentence-transformers
