@@ -43,8 +43,7 @@ def fetch_latest_papers(category, max_results):
         "&sortBy=submittedDate&sortOrder=descending"
         f"&start=0&max_results={max_results}"
     )
-    response = requests.get(url, headers={"User-Agent": USER_AGENT})
-    response.raise_for_status()
+    response = request_with_retry(url)
     return feedparser.parse(response.content).entries
 
 
@@ -73,6 +72,23 @@ def parse_entry(entry):
         "updated_date": updated.isoformat(),
         "pdf_url": pdf_url,
     }
+    
+def request_with_retry(url, max_retries=5, **kwargs):
+    """Retry with backoff on rate limits/transient server errors — arXiv-facing
+    requests can get a 429 from shared CI IP ranges even when we're well within
+    our own pacing, so this is about tolerating that, not fixing our own behavior."""
+    for attempt in range(1, max_retries + 1):
+        response = requests.get(url, headers={"User-Agent": USER_AGENT}, **kwargs)
+        if response.status_code == 200:
+            return response
+        if response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
+            retry_after = response.headers.get("Retry-After")
+            wait = int(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt * 5
+            print(f"    Got {response.status_code}, retrying in {wait}s (attempt {attempt}/{max_retries})...")
+            time.sleep(wait)
+            continue
+        response.raise_for_status()
+    raise RuntimeError(f"Exceeded retries fetching {url}")
 
 
 def get_existing_ids(arxiv_ids):
@@ -83,8 +99,7 @@ def get_existing_ids(arxiv_ids):
 
 
 def download_pdf(pdf_url):
-    response = requests.get(pdf_url, headers={"User-Agent": USER_AGENT}, timeout=30)
-    response.raise_for_status()
+    response = request_with_retry(pdf_url, timeout=30)
     return response.content
 
 
