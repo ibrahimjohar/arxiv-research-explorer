@@ -13,6 +13,16 @@
   --color-accent-soft: #a8c9bb;
 }
 
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
 :root {
   --bg: #f6f4ee;
   --fg: #10231c;
