@@ -5,7 +5,7 @@ from datetime import datetime
 
 import requests
 import feedparser
-import fitz                         #PyMuPDF
+import fitz  # PyMuPDF
 from dotenv import load_dotenv
 from supabase import create_client
 from sentence_transformers import SentenceTransformer
@@ -32,8 +32,27 @@ SECTION_PATTERN = re.compile(
 )
 REFERENCES_PATTERN = re.compile(r"^\s*(\d+\.?\s*)?(references|bibliography)\s*$", re.IGNORECASE)
 
-print("Loading embedding model...")
+print("Loading embedding model...", flush=True)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+
+def request_with_retry(url, max_retries=3, **kwargs):
+    """Retry with backoff on rate limits/transient server errors — arXiv-facing
+    requests can get a 429 from shared CI IP ranges even when we're well within
+    our own pacing, so this is about tolerating that, not fixing our own behavior.
+    Capped wait and lower max_retries so one stuck request can't eat unbounded time."""
+    for attempt in range(1, max_retries + 1):
+        response = requests.get(url, headers={"User-Agent": USER_AGENT}, **kwargs)
+        if response.status_code == 200:
+            return response
+        if response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
+            retry_after = response.headers.get("Retry-After")
+            wait = int(retry_after) if retry_after and retry_after.isdigit() else min(2 ** attempt * 5, 30)
+            print(f"    Got {response.status_code}, retrying in {wait}s (attempt {attempt}/{max_retries})...", flush=True)
+            time.sleep(wait)
+            continue
+        response.raise_for_status()
+    raise RuntimeError(f"Exceeded retries fetching {url}")
 
 
 def fetch_latest_papers(category, max_results):
@@ -72,23 +91,6 @@ def parse_entry(entry):
         "updated_date": updated.isoformat(),
         "pdf_url": pdf_url,
     }
-    
-def request_with_retry(url, max_retries=5, **kwargs):
-    """Retry with backoff on rate limits/transient server errors — arXiv-facing
-    requests can get a 429 from shared CI IP ranges even when we're well within
-    our own pacing, so this is about tolerating that, not fixing our own behavior."""
-    for attempt in range(1, max_retries + 1):
-        response = requests.get(url, headers={"User-Agent": USER_AGENT}, **kwargs)
-        if response.status_code == 200:
-            return response
-        if response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
-            retry_after = response.headers.get("Retry-After")
-            wait = int(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt * 5
-            print(f"    Got {response.status_code}, retrying in {wait}s (attempt {attempt}/{max_retries})...")
-            time.sleep(wait)
-            continue
-        response.raise_for_status()
-    raise RuntimeError(f"Exceeded retries fetching {url}")
 
 
 def get_existing_ids(arxiv_ids):
@@ -104,7 +106,7 @@ def download_pdf(pdf_url):
 
 
 def extract_pages(pdf_bytes):
-    #returns a list of (page_number, text) tuples.
+    """Returns a list of (page_number, text) tuples."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     pages = [(i + 1, page.get_text()) for i, page in enumerate(doc)]
     doc.close()
@@ -129,11 +131,11 @@ def embed_texts(texts):
 
 
 def process_paper_fulltext(paper_id, pdf_url):
-    #download, parse, section-tag, chunk, and embed one paper's full text.
+    """Download, parse, section-tag, chunk, and embed one paper's full text."""
     try:
         pdf_bytes = download_pdf(pdf_url)
     except Exception as e:
-        print(f"  Could not download PDF: {e}")
+        print(f"Could not download PDF: {e}", flush=True)
         return []
 
     pages = extract_pages(pdf_bytes)
@@ -181,8 +183,9 @@ def process_paper_fulltext(paper_id, pdf_url):
 
     return chunk_rows
 
+
 def get_papers_without_chunks(paper_records):
-    """Given paper rows, return the ones that have no chunks yet, covers
+    """Given paper rows, return the ones that have no chunks yet — covers
     both brand-new papers and ones that failed partway through last run."""
     if not paper_records:
         return []
@@ -193,7 +196,7 @@ def get_papers_without_chunks(paper_records):
 
 
 def run():
-    print(f"Fetching latest {PAPERS_PER_RUN} papers in {ARXIV_CATEGORY}...")
+    print(f"Fetching latest {PAPERS_PER_RUN} papers in {ARXIV_CATEGORY}...", flush=True)
     entries = fetch_latest_papers(ARXIV_CATEGORY, PAPERS_PER_RUN)
     parsed = [parse_entry(e) for e in entries]
     all_arxiv_ids = [p["arxiv_id"] for p in parsed]
@@ -201,13 +204,14 @@ def run():
     existing = get_existing_ids(all_arxiv_ids)
     new_papers = [p for p in parsed if p["arxiv_id"] not in existing]
 
-    print(f"{len(parsed)} fetched, {len(existing)} already in the database, {len(new_papers)} new.")
+    print(f"{len(parsed)} fetched, {len(existing)} already in the database, {len(new_papers)} new.", flush=True)
 
     if new_papers:
         supabase.table("papers").insert(new_papers).execute()
-        print(f"Inserted {len(new_papers)} new papers.")
+        print(f"Inserted {len(new_papers)} new papers.", flush=True)
 
-    #re-fetch full records for everything touched this run, so we also catch any paper from a previous run whose chunking failed partway through.
+    # Re-fetch full records for everything touched this run, so we also catch
+    # any paper from a previous run whose chunking failed partway through.
     all_records = (
         supabase.table("papers")
         .select("id, title, pdf_url")
@@ -216,26 +220,26 @@ def run():
         .data
     )
     to_process = get_papers_without_chunks(all_records)
-    print(f"{len(to_process)} paper(s) need full-text processing (new or previously incomplete).")
+    print(f"{len(to_process)} paper(s) need full-text processing (new or previously incomplete).", flush=True)
 
     for paper in to_process:
-        print(f"Processing: {paper['title'][:60]}...")
+        print(f"  Processing: {paper['title'][:60]}...", flush=True)
         time.sleep(3)
         try:
             chunk_rows = process_paper_fulltext(paper["id"], paper["pdf_url"])
         except Exception as e:
-            print(f"failed to process this paper, skipping: {e}")
+            print(f"Failed to process this paper, skipping: {e}", flush=True)
             continue
 
         if not chunk_rows:
-            print("no chunks extracted (PDF may have failed to parse).")
+            print("No chunks extracted (PDF may have failed to parse).", flush=True)
             continue
 
         try:
             supabase.table("chunks").insert(chunk_rows).execute()
-            print(f"inserted {len(chunk_rows)} chunks.")
+            print(f"Inserted {len(chunk_rows)} chunks.", flush=True)
         except Exception as e:
-            print(f"failed to insert chunks, skipping: {e}")
+            print(f"Failed to insert chunks, skipping: {e}", flush=True)
 
 
 if __name__ == "__main__":
