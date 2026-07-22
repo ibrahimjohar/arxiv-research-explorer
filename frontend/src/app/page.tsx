@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
 
 const previewChunks = [
   { section: "introduction", snippet: "we propose a dual-attention framework for..." },
@@ -9,46 +10,106 @@ const previewChunks = [
   { section: "results", snippet: "this reduces error by a wide margin across all..." },
 ];
 
-// original bold geometric arrow: solid shapes, sharp angles — same spirit as
-// the reference, not a reproduction of it
-function ArrowIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width={14} height={14} className={className} fill="currentColor" aria-hidden="true">
-      <polygon points="2,4 14,4 14,0 24,12 14,24 14,20 2,20" />
-    </svg>
-  );
-}
+type Node = { id: string; x: number; y: number };
 
-const nodes = [
-  { id: "a", x: 80, y: 550 }, { id: "b", x: 220, y: 480 }, { id: "c", x: 150, y: 650 },
-  { id: "d", x: 420, y: 620 }, { id: "e", x: 620, y: 100 }, { id: "f", x: 760, y: 220 },
-  { id: "g", x: 880, y: 340 }, { id: "h", x: 700, y: 480 }, { id: "i", x: 900, y: 600 },
-  { id: "j", x: 500, y: 60 }, { id: "k", x: 350, y: 220 },
+const initialNodes: Node[] = [
+  { id: "a", x: 8, y: 79 }, { id: "b", x: 22, y: 69 }, { id: "c", x: 15, y: 93 },
+  { id: "d", x: 42, y: 89 }, { id: "e", x: 62, y: 14 }, { id: "f", x: 76, y: 31 },
+  { id: "g", x: 88, y: 49 }, { id: "h", x: 70, y: 69 }, { id: "i", x: 90, y: 86 },
+  { id: "j", x: 50, y: 9 }, { id: "k", x: 35, y: 31 }, { id: "l", x: 58, y: 58 },
+  { id: "m", x: 24, y: 44 }, { id: "n", x: 46, y: 42 }, { id: "o", x: 80, y: 78 },
+  { id: "p", x: 12, y: 24 }, { id: "q", x: 95, y: 18 },
 ];
-const nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
-const edges: [string, string][] = [
-  ["a", "b"], ["b", "c"], ["b", "d"], ["d", "h"], ["e", "f"],
-  ["f", "g"], ["g", "h"], ["g", "i"], ["e", "j"], ["k", "j"], ["k", "b"], ["h", "i"],
-];
-const pulseNodes = new Set(["a", "d", "e", "g", "i", "k"]);
 
-const paperInfo: Record<string, { title: string; blurb: string }> = {
-  a: { title: "Attention Is All You Need", blurb: "introduced the transformer architecture" },
-  b: { title: "Deep Residual Learning for Image Recognition", blurb: "residual connections that enabled much deeper networks" },
-  c: { title: "Generative Adversarial Networks", blurb: "two networks trained against each other to generate realistic data" },
-  d: { title: "Playing Atari with Deep Reinforcement Learning", blurb: "deep q-networks learning to play games from raw pixels" },
-  e: { title: "BERT: Pre-training of Deep Bidirectional Transformers", blurb: "bidirectional pretraining for language understanding" },
-  f: { title: "Adam: A Method for Stochastic Optimization", blurb: "the optimizer most modern models train with" },
-  g: { title: "Denoising Diffusion Probabilistic Models", blurb: "the generative process behind modern image diffusion" },
-  h: { title: "Proximal Policy Optimization Algorithms", blurb: "a stable, widely used policy-gradient method" },
-  i: { title: "ImageNet Classification with Deep Convolutional Neural Networks", blurb: "the result that kicked off the deep learning era in vision" },
-  j: { title: "Sequence to Sequence Learning with Neural Networks", blurb: "mapping sequences to sequences with recurrent encoders and decoders" },
-  k: { title: "Auto-Encoding Variational Bayes", blurb: "the variational autoencoder framework" },
+// every node now has 2-3 connections — added "l-p" specifically, since
+// those two were the only ones sitting at degree 1 (a dangling line end)
+const edgePool: [string, string][] = [
+  ["a", "b"], ["b", "c"], ["b", "m"], ["d", "c"], ["d", "o"], ["e", "f"],
+  ["f", "g"], ["g", "h"], ["g", "q"], ["e", "j"], ["k", "j"],
+  ["h", "i"], ["h", "o"], ["i", "o"], ["l", "n"],
+  ["n", "k"], ["n", "e"], ["j", "q"], ["a", "m"], ["c", "a"],
+  ["p", "m"], ["q", "i"], ["l", "p"],
+];
+
+const paperInfo: Record<string, { title: string; authors: string; blurb: string }> = {
+  a: { title: "Attention Is All You Need", authors: "Vaswani et al., 2017", blurb: "we propose the transformer, a network architecture based solely on attention, dispensing with recurrence and convolutions entirely." },
+  b: { title: "Deep Residual Learning for Image Recognition", authors: "He et al., 2016", blurb: "we reformulate the layers as learning residual functions, easing the training of substantially deeper networks." },
+  c: { title: "Generative Adversarial Networks", authors: "Goodfellow et al., 2014", blurb: "we train two models simultaneously: a generator capturing the data distribution, and a discriminator estimating the probability a sample came from it." },
+  d: { title: "Playing Atari with Deep Reinforcement Learning", authors: "Mnih et al., 2013", blurb: "a convolutional network trained with a variant of q-learning, taking raw pixels as input and outputting a value function." },
+  e: { title: "BERT: Pre-training of Deep Bidirectional Transformers", authors: "Devlin et al., 2018", blurb: "we pretrain deep bidirectional representations by jointly conditioning on both left and right context in all layers." },
+  f: { title: "Adam: A Method for Stochastic Optimization", authors: "Kingma & Ba, 2014", blurb: "an efficient first-order optimizer requiring only modest memory, now the default choice for training deep networks." },
+  g: { title: "Denoising Diffusion Probabilistic Models", authors: "Ho et al., 2020", blurb: "a class of generative models trained via a gradual denoising process, underlying most modern image diffusion systems." },
+  h: { title: "Proximal Policy Optimization Algorithms", authors: "Schulman et al., 2017", blurb: "policy gradient methods that alternate between sampling data and optimizing a surrogate objective, simpler to tune than prior approaches." },
+  i: { title: "ImageNet Classification with Deep Convolutional Neural Networks", authors: "Krizhevsky et al., 2012", blurb: "a large, deep convolutional network that substantially outperformed prior approaches, credited with reviving interest in deep learning." },
+  j: { title: "Sequence to Sequence Learning with Neural Networks", authors: "Sutskever et al., 2014", blurb: "a general end-to-end approach mapping one sequence to another with a multilayered recurrent encoder and decoder." },
+  k: { title: "Auto-Encoding Variational Bayes", authors: "Kingma & Welling, 2013", blurb: "a stochastic variational inference algorithm that scales to large datasets under mild differentiability conditions." },
+  l: { title: "Layer Normalization", authors: "Ba et al., 2016", blurb: "a normalization technique computed across features for a single training case, stabilizing and speeding up training." },
+  m: { title: "Distributed Representations of Words and Phrases", authors: "Mikolov et al., 2013", blurb: "extensions that improve embedding quality and training speed, including subsampling of frequent words." },
+  n: { title: "Neural Machine Translation by Jointly Learning to Align and Translate", authors: "Bahdanau et al., 2014", blurb: "a fixed-length vector is a bottleneck; we propose to jointly learn to align and translate instead." },
+  o: { title: "Dropout: A Simple Way to Prevent Neural Networks from Overfitting", authors: "Srivastava et al., 2014", blurb: "randomly dropping units during training prevents complex co-adaptations and reduces overfitting." },
+  p: { title: "Language Models are Few-Shot Learners", authors: "Brown et al., 2020", blurb: "scaling up language models greatly improves task-agnostic, few-shot performance, at times matching fine-tuned approaches." },
+  q: { title: "Batch Normalization", authors: "Ioffe & Szegedy, 2015", blurb: "normalizing layer inputs per mini-batch allows much higher learning rates and less sensitivity to initialization." },
 };
+
+const REST_MS = 7500;
+const MOVE_MS = 2600;
+
+function resolveOverlap(input: Node[], minDist = 11): Node[] {
+  const result = input.map((n) => ({ ...n }));
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const a = result[i], b = result[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.001;
+        if (dist < minDist) {
+          const push = (minDist - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x = Math.min(96, Math.max(4, a.x - ux * push));
+          a.y = Math.min(96, Math.max(4, a.y - uy * push));
+          b.x = Math.min(96, Math.max(4, b.x + ux * push));
+          b.y = Math.min(96, Math.max(4, b.y + uy * push));
+        }
+      }
+    }
+  }
+  return result;
+}
 
 export default function Home() {
   const shouldReduceMotion = useReducedMotion();
+  const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const graphRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = graphRef.current;
+    if (!el) return;
+    const updateDims = () => setDims({ width: el.clientWidth, height: el.clientHeight });
+    updateDims();
+    const observer = new ResizeObserver(updateDims);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (shouldReduceMotion) return;
+    const interval = setInterval(() => {
+      setNodes((prev) =>
+        resolveOverlap(
+          prev.map((n) => ({
+            ...n,
+            x: Math.min(96, Math.max(4, n.x + (Math.random() - 0.5) * 30)),
+            y: Math.min(96, Math.max(4, n.y + (Math.random() - 0.5) * 30)),
+          }))
+        )
+      );
+    }, REST_MS + MOVE_MS);
+    return () => clearInterval(interval);
+  }, [shouldReduceMotion]);
+
+  const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
   const container = {
     hidden: {},
@@ -65,79 +126,111 @@ export default function Home() {
   };
 
   return (
-    <main className="relative min-h-screen flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
-      <svg
-        className="pointer-events-none absolute inset-0 w-full h-full text-accent dark:text-accent-soft"
-        viewBox="0 0 1000 700"
-        preserveAspectRatio="xMidYMid slice"
-        aria-hidden="true"
-      >
-        <g stroke="currentColor" strokeWidth={1} fill="none">
-          {edges.map(([from, to], i) => (
-            <motion.line
-              key={`${from}-${to}`}
-              x1={nodeMap[from].x}
-              y1={nodeMap[from].y}
-              x2={nodeMap[to].x}
-              y2={nodeMap[to].y}
-              strokeOpacity={0.18}
-              strokeDasharray="5 7"
-              animate={shouldReduceMotion ? {} : { strokeDashoffset: [0, -48] }}
-              transition={{
-                duration: 3 + (i % 4),
-                repeat: Infinity,
-                ease: "linear",
-                delay: i * 0.15,
-              }}
-            />
-          ))}
-        </g>
-        {nodes.map((n, i) => (
-          <motion.circle
-            key={n.id}
-            cx={n.x}
-            cy={n.y}
-            r={pulseNodes.has(n.id) ? 5 : 3}
-            fill="currentColor"
-            opacity={hoveredNode === n.id ? 0.9 : 0.35}
-            animate={
-              shouldReduceMotion || !pulseNodes.has(n.id)
-                ? {}
-                : { opacity: [0.25, 0.6, 0.25] }
-            }
-            transition={{ duration: 2.5 + (i % 3), repeat: Infinity, ease: "easeInOut", delay: i * 0.2 }}
-          />
-        ))}
-      </svg>
+    <main ref={graphRef} className="relative min-h-screen flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        {dims.width > 0 &&
+          edgePool.map(([from, to], i) => {
+            const p1 = nodeMap[from];
+            const p2 = nodeMap[to];
+            if (!p1 || !p2) return null;
+            const x1 = (p1.x / 100) * dims.width;
+            const y1 = (p1.y / 100) * dims.height;
+            const x2 = (p2.x / 100) * dims.width;
+            const y2 = (p2.y / 100) * dims.height;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const length = Math.hypot(dx, dy);
+            const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+            const cycle = (REST_MS + MOVE_MS) / 1000;
 
-      <div className="pointer-events-none absolute inset-0 hidden md:block">
-        {nodes.map((n) => (
-          <div
-            key={n.id}
-            className="absolute pointer-events-auto -translate-x-1/2 -translate-y-1/2 w-6 h-6"
-            style={{ left: `${(n.x / 1000) * 100}%`, top: `${(n.y / 700) * 100}%` }}
-            onMouseEnter={() => setHoveredNode(n.id)}
-            onMouseLeave={() => setHoveredNode(null)}
-          >
-            <AnimatePresence>
-              {hoveredNode === n.id && (
-                <motion.div
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-56 rounded-lg border border-accent-soft bg-bg shadow-lg p-3 z-10"
-                >
-                  <p className="text-xs font-medium text-fg mb-1">{paperInfo[n.id].title}</p>
-                  <p className="text-[11px] text-fg/60 leading-snug">{paperInfo[n.id].blurb}</p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        ))}
+            return (
+              <div
+                key={`${from}-${to}`}
+                className="absolute origin-left text-accent dark:text-accent-soft"
+                style={{
+                  left: x1,
+                  top: y1,
+                  width: length,
+                  height: 1,
+                  transform: `rotate(${angle}deg)`,
+                  transition: shouldReduceMotion
+                    ? "none"
+                    : `left ${MOVE_MS}ms ease-in-out, top ${MOVE_MS}ms ease-in-out, width ${MOVE_MS}ms ease-in-out, transform ${MOVE_MS}ms ease-in-out`,
+                }}
+              >
+                <div
+                  className="w-full h-full"
+                  style={{
+                    backgroundImage:
+                      "repeating-linear-gradient(to right, currentColor 0px 5px, transparent 5px 11px)",
+                    // explicit resting opacity — without this, the browser shows
+                    // full opacity during each line's animation-delay window,
+                    // which is exactly what caused the "all lines flash on,
+                    // then switch off one by one" load-in bug
+                    opacity: shouldReduceMotion ? 0.18 : 0,
+                    animation: shouldReduceMotion
+                      ? "none"
+                      : `dash-crawl 2.4s linear infinite, line-fade ${cycle}s ease-in-out ${i * 0.45}s infinite`,
+                  }}
+                />
+              </div>
+            );
+          })}
       </div>
 
-      <div className="pointer-events-none absolute top-1/4 right-0 w-1/2 h-1/2 bg-accent/10 blur-[110px] rounded-full" />
+      <div className="pointer-events-none absolute inset-0">
+        {nodes.map((n, i) => {
+          const flipUp = n.y > 65;
+          const anchorLeft = n.x < 12;
+          const anchorRight = n.x > 88;
+          const isHovered = hoveredNode === n.id;
+          return (
+            <div
+              key={n.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+              style={{
+                left: `${n.x}%`,
+                top: `${n.y}%`,
+                transition: shouldReduceMotion ? "none" : `left ${MOVE_MS}ms ease-in-out, top ${MOVE_MS}ms ease-in-out`,
+                zIndex: isHovered ? 50 : 1,
+              }}
+              onMouseEnter={() => setHoveredNode(n.id)}
+              onMouseLeave={() => setHoveredNode(null)}
+            >
+              <motion.div
+                className="w-2 h-2 rounded-full bg-current text-accent dark:text-accent-soft"
+                style={{ opacity: isHovered ? 0.9 : 0.35 }}
+                animate={shouldReduceMotion ? {} : { opacity: [0.25, 0.6, 0.25] }}
+                transition={{ duration: 2.5 + (i % 3), repeat: Infinity, ease: "easeInOut", delay: i * 0.2 }}
+              />
+              <div className="absolute inset-0 -m-2.5" style={{ cursor: "pointer" }} />
+              <AnimatePresence>
+                {isHovered && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
+                    transition={{ duration: 0.15 }}
+                    className={`absolute w-52 rounded-md border border-accent-soft bg-bg shadow-xl px-3 py-2.5 z-50 ${
+                      flipUp ? "bottom-full mb-2" : "top-full mt-2"
+                    } ${anchorLeft ? "left-0" : anchorRight ? "right-0" : "left-1/2 -translate-x-1/2"}`}
+                  >
+                    <p className="text-[11px] font-medium text-fg leading-snug mb-0.5">{paperInfo[n.id].title}</p>
+                    <p className="text-[10px] text-accent dark:text-accent-soft mb-1">{paperInfo[n.id].authors}</p>
+                    <p className="text-[10px] text-fg/60 leading-snug">{paperInfo[n.id].blurb}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+
+      <motion.div
+        className="pointer-events-none absolute top-1/4 right-0 w-1/2 h-1/2 bg-accent/10 blur-[110px] rounded-full"
+        animate={shouldReduceMotion ? {} : { x: [0, 30, -10, 0], y: [0, -20, 15, 0], scale: [1, 1.08, 0.96, 1] }}
+        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
+      />
 
       <div className="relative w-full grid lg:grid-cols-2 gap-16 items-center">
         <motion.div variants={container} initial="hidden" animate="show" className="max-w-xl">
@@ -154,16 +247,11 @@ export default function Home() {
             </span>
             <span className="block leading-[1.05] tracking-tight text-5xl sm:text-6xl md:text-7xl lg:text-8xl">
               <span className="font-heading font-normal">the </span>
-              <span className="font-body font-semibold text-accent dark:text-accent-soft">
-                abstract
-              </span>
+              <span className="font-body font-semibold text-accent dark:text-accent-soft">abstract</span>
             </span>
           </motion.h1>
 
-          <motion.p
-            variants={item}
-            className="text-base sm:text-lg text-fg/70 max-w-xl mb-10 leading-relaxed"
-          >
+          <motion.p variants={item} className="text-base sm:text-lg text-fg/70 max-w-xl mb-10 leading-relaxed">
             built on retrieval-augmented generation over full paper text — ask
             a question and get an answer pulled from the actual paper, with
             the section it came from.
@@ -174,40 +262,28 @@ export default function Home() {
             whileHover={
               shouldReduceMotion
                 ? undefined
-                : {
-                    scale: 1.04,
-                    boxShadow: "0 0 28px var(--color-accent)",
-                    transition: { duration: 0.25 },
-                  }
+                : { scale: 1.04, boxShadow: "0 0 28px var(--color-accent)", transition: { duration: 0.25 } }
             }
             whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
             className="group bg-accent text-accent-fg font-medium px-6 py-3 rounded-full text-sm sm:text-base transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent inline-flex items-center gap-2"
           >
             start searching
-            <ArrowIcon className="transition-all duration-300 -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100" />
+            <ArrowRight size={17} strokeWidth={2.5} className="transition-transform duration-300 group-hover:translate-x-1" />
           </motion.button>
         </motion.div>
 
         <div className="hidden lg:block relative h-[440px]">
           {previewChunks.map((chunk, i) => (
-            <div
-              key={chunk.section}
-              className="absolute"
-              style={{ top: `${i * 30}%`, left: `${i % 2 === 0 ? 10 : 35}%` }}
-            >
-              {/* ambient bob: pure CSS, runs on the compositor, never conflicts with hover */}
+            <div key={chunk.section} className="absolute" style={{ top: `${i * 30}%`, left: `${i % 2 === 0 ? 10 : 35}%` }}>
               <div
                 className={shouldReduceMotion ? "" : "animate-[float_5s_ease-in-out_infinite]"}
                 style={{ animationDelay: `${i * 0.4}s` }}
               >
-                {/* hover response: Framer, only property it owns is scale */}
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.6, delay: 0.4 + i * 0.15 }}
-                  whileHover={
-                    shouldReduceMotion ? undefined : { scale: 1.05, transition: { duration: 0.2 } }
-                  }
+                  whileHover={shouldReduceMotion ? undefined : { scale: 1.05, transition: { duration: 0.2 } }}
                   className="w-72 rounded-lg border border-accent-soft bg-bg shadow-lg p-5 cursor-default hover:border-accent transition-colors"
                 >
                   <span className="inline-block text-xs tracking-wide uppercase text-accent-fg bg-accent rounded px-2 py-0.5 mb-2">

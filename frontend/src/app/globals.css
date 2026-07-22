@@ -23,6 +23,29 @@
   }
 }
 
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+@keyframes dash-crawl {
+  to {
+    background-position-x: 11px;
+  }
+}
+
+@keyframes line-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  35%,
+  65% {
+    opacity: 0.22;
+  }
+}
+
 :root {
   --bg: #f6f4ee;
   --fg: #10231c;
