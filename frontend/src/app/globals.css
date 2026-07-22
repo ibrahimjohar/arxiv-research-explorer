@@ -3,7 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-heading: var(--font-lora), serif;
+  --font-heading: var(--font-fraunces), serif;
   --font-body: "Satoshi", sans-serif;
 
   --color-bg: var(--bg);

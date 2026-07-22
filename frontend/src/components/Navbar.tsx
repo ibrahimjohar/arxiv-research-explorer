@@ -5,8 +5,8 @@ import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 
 // Adjust these independently to resize the two words of the wordmark
-const LOGO_PRIMARY_SIZE = "text-[22px]"; // "arxiv"
-const LOGO_SECONDARY_SIZE = "text-[22px]"; // "explorer"
+const LOGO_PRIMARY_SIZE = "text-[25px]"; // "arxiv"
+const LOGO_SECONDARY_SIZE = "text-[25px]"; // "explorer"
 
 function GithubIcon({ size = 18 }: { size?: number }) {
   return (
@@ -61,8 +61,8 @@ export default function Navbar() {
           <Link href="/" className="flex items-center gap-2.5">
             <LogoMark />
             <span className="flex items-baseline gap-2">
-                <span className={`font-heading ${LOGO_PRIMARY_SIZE} text-fg`}>arxiv</span>
-                <span className={`font-body font-semibold ${LOGO_SECONDARY_SIZE} tracking-wide text-accent dark:text-accent-soft`}>
+                <span className={`font-heading ${LOGO_PRIMARY_SIZE} text-fg tracking-tighter`}>arXiv</span>
+                <span className={`font-heading ${LOGO_PRIMARY_SIZE} tracking-tighter text-accent dark:text-accent-soft italic font-light`}>
                     explorer
                 </span>
             </span>
