@@ -1,6 +1,20 @@
 import type { Metadata } from "next";
 import { Lora } from "next/font/google";
 import "./globals.css";
+import Navbar from "@/components/Navbar";
+import Script from "next/script";
+
+<Script id="theme-init" strategy="beforeInteractive">
+  {`
+    (function () {
+      try {
+        var stored = localStorage.getItem("theme");
+        var theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        if (theme === "dark") document.documentElement.classList.add("dark");
+      } catch (e) {}
+    })();
+  `}
+</Script>
 
 const lora = Lora({
   subsets: ["latin"],
@@ -44,7 +58,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body><Navbar />{children}</body>
     </html>
   );
 }

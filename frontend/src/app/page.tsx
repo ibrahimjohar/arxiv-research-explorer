@@ -126,7 +126,7 @@ export default function Home() {
   };
 
   return (
-    <main ref={graphRef} className="relative min-h-screen flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
+    <main ref={graphRef} className="relative min-h-[calc(100vh-5rem)] flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
         {dims.width > 0 &&
           edgePool.map(([from, to], i) => {
