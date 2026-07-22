@@ -73,6 +73,7 @@ export default function AskChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (messages.length === 0) return;
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 

@@ -85,7 +85,12 @@ export default function Home() {
   useEffect(() => {
     const el = graphRef.current;
     if (!el) return;
-    const updateDims = () => setDims({ width: el.clientWidth, height: el.clientHeight });
+    const updateDims = () => {
+      const width = el.clientWidth;
+      const height = el.clientHeight;
+      console.log("graph dims measured:", width, height); // temporary — remove after debugging
+      setDims({ width, height });
+    };
     updateDims();
     // Extra safety net: re-measure on the next animation frame and on window
     // resize, so a race against layout/font-loading can't leave dims stuck at
@@ -116,6 +121,8 @@ export default function Home() {
     }, REST_MS + MOVE_MS);
     return () => clearInterval(interval);
   }, [shouldReduceMotion]);
+
+  
 
   const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
