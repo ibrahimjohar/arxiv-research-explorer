@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import AskChat from "@/components/AskChat";
 
 const previewChunks = [
   { section: "introduction", snippet: "we propose a dual-attention framework for..." },
@@ -21,8 +22,6 @@ const initialNodes: Node[] = [
   { id: "p", x: 12, y: 24 }, { id: "q", x: 95, y: 18 },
 ];
 
-// every node now has 2-3 connections — added "l-p" specifically, since
-// those two were the only ones sitting at degree 1 (a dangling line end)
 const edgePool: [string, string][] = [
   ["a", "b"], ["b", "c"], ["b", "m"], ["d", "c"], ["d", "o"], ["e", "f"],
   ["f", "g"], ["g", "h"], ["g", "q"], ["e", "j"], ["k", "j"],
@@ -88,9 +87,18 @@ export default function Home() {
     if (!el) return;
     const updateDims = () => setDims({ width: el.clientWidth, height: el.clientHeight });
     updateDims();
+    // Extra safety net: re-measure on the next animation frame and on window
+    // resize, so a race against layout/font-loading can't leave dims stuck at
+    // a stale zero with nothing left to correct it.
+    const raf = requestAnimationFrame(updateDims);
+    window.addEventListener("resize", updateDims);
     const observer = new ResizeObserver(updateDims);
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", updateDims);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -126,192 +134,220 @@ export default function Home() {
   };
 
   return (
-    <main ref={graphRef} className="relative min-h-[calc(100vh-4rem)] flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
-      <div className="pointer-events-none absolute inset-0">
-        {dims.width > 0 &&
-          edgePool.map(([from, to], i) => {
-            const p1 = nodeMap[from];
-            const p2 = nodeMap[to];
-            if (!p1 || !p2) return null;
-            const x1 = (p1.x / 100) * dims.width;
-            const y1 = (p1.y / 100) * dims.height;
-            const x2 = (p2.x / 100) * dims.width;
-            const y2 = (p2.y / 100) * dims.height;
-            const dx = x2 - x1;
-            const dy = y2 - y1;
-            const length = Math.hypot(dx, dy);
-            const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-            const cycle = (REST_MS + MOVE_MS) / 1000;
-
-            return (
-              <div
-                key={`${from}-${to}`}
-                className="absolute origin-left text-accent dark:text-accent-soft"
-                style={{
-                  left: x1,
-                  top: y1,
-                  width: length,
-                  height: 1,
-                  transform: `rotate(${angle}deg)`,
-                  transition: shouldReduceMotion
-                    ? "none"
-                    : `left ${MOVE_MS}ms ease-in-out, top ${MOVE_MS}ms ease-in-out, width ${MOVE_MS}ms ease-in-out, transform ${MOVE_MS}ms ease-in-out`,
-                }}
-              >
-                <div
-                  className="w-full h-full"
-                  style={{
-                    backgroundImage:
-                      "repeating-linear-gradient(to right, currentColor 0px 5px, transparent 5px 11px)",
-                    // explicit resting opacity — without this, the browser shows
-                    // full opacity during each line's animation-delay window,
-                    // which is exactly what caused the "all lines flash on,
-                    // then switch off one by one" load-in bug
-                    opacity: shouldReduceMotion ? 0.18 : 0,
-                    animation: shouldReduceMotion
-                      ? "none"
-                      : `dash-crawl 2.4s linear infinite, line-fade ${cycle}s ease-in-out ${i * 0.45}s infinite`,
-                  }}
-                />
-              </div>
-            );
-          })}
-      </div>
-
-      <div className="pointer-events-none absolute inset-0">
-        {dims.width > 0 &&
-          nodes.map((n, i) => {
-            const flipUp = n.y > 65;
-            const anchorLeft = n.x < 12;
-            const anchorRight = n.x > 88;
-            const isHovered = hoveredNode === n.id;
-            const px = (n.x / 100) * dims.width;
-            const py = (n.y / 100) * dims.height;
-            return (
-              <div
-                key={n.id}
-                className="absolute pointer-events-auto"
-                style={{
-                  left: 0,
-                  top: 0,
-                  // translate3d + a chained centering translate — both are pure
-                  // transform, so this animates on the compositor only, never
-                  // triggering layout the way left/top did
-                  transform: `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`,
-                  transition: shouldReduceMotion ? "none" : `transform ${MOVE_MS}ms ease-in-out`,
-                  zIndex: isHovered ? 50 : 1,
-                }}
-                onMouseEnter={() => setHoveredNode(n.id)}
-                onMouseLeave={() => setHoveredNode(null)}
-              >
-                <motion.div
-                  className="w-2 h-2 rounded-full bg-current text-accent dark:text-accent-soft"
-                  style={{ opacity: isHovered ? 0.9 : 0.35 }}
-                  animate={shouldReduceMotion ? {} : { opacity: [0.25, 0.6, 0.25] }}
-                  transition={{ duration: 2.5 + (i % 3), repeat: Infinity, ease: "easeInOut", delay: i * 0.2 }}
-                />
-                <div className="absolute inset-0 -m-2.5" style={{ cursor: "pointer" }} />
-                <AnimatePresence>
-                  {isHovered && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
-                      transition={{ duration: 0.15 }}
-                      className={`absolute w-52 rounded-md border border-accent-soft bg-bg shadow-xl px-3 py-2.5 z-50 ${
-                        flipUp ? "bottom-full mb-2" : "top-full mt-2"
-                      } ${anchorLeft ? "left-0" : anchorRight ? "right-0" : "left-1/2 -translate-x-1/2"}`}
-                    >
-                      <p className="text-[12px] font-heading text-extrabold text-fg leading-snug mb-0.5">{paperInfo[n.id].title}</p>
-                      <p className="text-[11px] font-heading italic text-accent dark:text-accent-soft mb-1">{paperInfo[n.id].authors}</p>
-                      <p className="text-[10px] text-fg/60 leading-snug">{paperInfo[n.id].blurb}</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            );
-          })}
-      </div>
-
+    <div className="relative overflow-hidden">
+      {/* Single continuous ambient glow layer spanning the whole page —
+          previously each section owned its own glow, clipped hard at that
+          section's own boundary, which is what caused the visible seam. */}
       <motion.div
-        className="pointer-events-none absolute top-1/4 right-0 w-1/2 h-1/2 bg-accent/10 blur-[110px] rounded-full"
+        className="pointer-events-none absolute top-[10vh] right-0 w-[600px] h-[600px] bg-accent/10 blur-[130px] rounded-full"
         animate={shouldReduceMotion ? {} : { x: [0, 30, -10, 0], y: [0, -20, 15, 0], scale: [1, 1.08, 0.96, 1] }}
         transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
       />
+      <motion.div
+        className="pointer-events-none absolute top-[85vh] left-1/4 w-[500px] h-[500px] bg-accent-soft/10 blur-[120px] rounded-full"
+        animate={shouldReduceMotion ? {} : { x: [0, -20, 15, 0], y: [0, 15, -10, 0], scale: [1, 0.95, 1.05, 1] }}
+        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
+      />
 
-      <div className="relative w-full grid lg:grid-cols-2 gap-16 items-center">
-        <motion.div variants={container} initial="hidden" animate="show" className="max-w-2xl">
-          <motion.span
-            variants={item}
-            className="inline-block text-base uppercase tracking-wider text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6"
-          >
-            cs.ai · updated daily
-          </motion.span>
+      <main ref={graphRef} className="relative min-h-[calc(100vh-4rem)] flex items-center px-6 sm:px-10 md:px-16 lg:px-24 py-24 overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          {dims.width > 0 &&
+            edgePool.map(([from, to], i) => {
+              const p1 = nodeMap[from];
+              const p2 = nodeMap[to];
+              if (!p1 || !p2) return null;
+              const x1 = (p1.x / 100) * dims.width;
+              const y1 = (p1.y / 100) * dims.height;
+              const x2 = (p2.x / 100) * dims.width;
+              const y2 = (p2.y / 100) * dims.height;
+              const dx = x2 - x1;
+              const dy = y2 - y1;
+              const length = Math.hypot(dx, dy);
+              const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+              const cycle = (REST_MS + MOVE_MS) / 1000;
 
-          <motion.h1 variants={item} className="mb-6">
-            <span className="block font-heading font-extralight italic text-2xl sm:text-3xl md:text-4xl text-fg/50 tracking-tight mb-1">
-              search past
-            </span>
-            <span className="block leading-[1.05] tracking-tighter text-5xl sm:text-6xl md:text-7xl lg:text-8xl">
-              <span className="text-tighter font-heading font-normal italic">the </span>
-              <span className="font-body font-semibold text-accent dark:text-accent-soft">abstract</span>
-            </span>
-          </motion.h1>
+              return (
+                <div
+                  key={`${from}-${to}`}
+                  className="absolute origin-left text-accent dark:text-accent-soft"
+                  style={{
+                    left: x1,
+                    top: y1,
+                    width: length,
+                    height: 1,
+                    transform: `rotate(${angle}deg)`,
+                    transition: shouldReduceMotion
+                      ? "none"
+                      : `left ${MOVE_MS}ms ease-in-out, top ${MOVE_MS}ms ease-in-out, width ${MOVE_MS}ms ease-in-out, transform ${MOVE_MS}ms ease-in-out`,
+                  }}
+                >
+                  <div
+                    className="w-full h-full"
+                    style={{
+                      backgroundImage:
+                        "repeating-linear-gradient(to right, currentColor 0px 5px, transparent 5px 11px)",
+                      opacity: shouldReduceMotion ? 0.18 : 0,
+                      animation: shouldReduceMotion
+                        ? "none"
+                        : `dash-crawl 2.4s linear infinite, line-fade ${cycle}s ease-in-out ${i * 0.45}s infinite`,
+                    }}
+                  />
+                </div>
+              );
+            })}
+        </div>
 
-          <motion.div variants={item} className="max-w-2xl mb-10">
-            <p className="text-lg sm:text-xl text-fg/70 leading-relaxed">
-              built on retrieval-augmented generation (RAG) over full paper text.
-              <br />
-              ask a question and get an answer pulled from the actual paper, with the
-              section it came from.
-            </p>
-            <p className="text-sm sm:text-base text-fg/50 leading-relaxed mt-3">
-              search combines semantic similarity with structured filters like
-              category and date, then reranks results with a cross-encoder before
-              anything reaches the model. the corpus updates daily from arxiv,
-              chunked by section rather than left as raw pages.
-            </p>
+        <div className="pointer-events-none absolute inset-0">
+          {dims.width > 0 &&
+            nodes.map((n, i) => {
+              const flipUp = n.y > 65;
+              const anchorLeft = n.x < 12;
+              const anchorRight = n.x > 88;
+              const isHovered = hoveredNode === n.id;
+              const px = (n.x / 100) * dims.width;
+              const py = (n.y / 100) * dims.height;
+              return (
+                <div
+                  key={n.id}
+                  className="absolute pointer-events-auto"
+                  style={{
+                    left: 0,
+                    top: 0,
+                    transform: `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`,
+                    transition: shouldReduceMotion ? "none" : `transform ${MOVE_MS}ms ease-in-out`,
+                    zIndex: isHovered ? 50 : 1,
+                  }}
+                  onMouseEnter={() => setHoveredNode(n.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                >
+                  <motion.div
+                    className="w-2 h-2 rounded-full bg-current text-accent dark:text-accent-soft"
+                    style={{ opacity: isHovered ? 0.9 : 0.35 }}
+                    animate={shouldReduceMotion ? {} : { opacity: [0.25, 0.6, 0.25] }}
+                    transition={{ duration: 2.5 + (i % 3), repeat: Infinity, ease: "easeInOut", delay: i * 0.2 }}
+                  />
+                  <div className="absolute inset-0 -m-2.5" style={{ cursor: "pointer" }} />
+                  <AnimatePresence>
+                    {isHovered && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.92, y: flipUp ? 4 : -4 }}
+                        transition={{ duration: 0.15 }}
+                        className={`absolute w-52 rounded-md border border-accent-soft bg-bg shadow-xl px-3 py-2.5 z-50 ${
+                          flipUp ? "bottom-full mb-2" : "top-full mt-2"
+                        } ${anchorLeft ? "left-0" : anchorRight ? "right-0" : "left-1/2 -translate-x-1/2"}`}
+                      >
+                        <p className="text-[12px] font-heading text-extrabold text-fg leading-snug mb-0.5">{paperInfo[n.id].title}</p>
+                        <p className="text-[11px] font-heading italic text-accent dark:text-accent-soft mb-1">{paperInfo[n.id].authors}</p>
+                        <p className="text-[10px] text-fg/60 leading-snug">{paperInfo[n.id].blurb}</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+        </div>
+
+        <div className="relative w-full grid lg:grid-cols-2 gap-16 items-center">
+          <motion.div variants={container} initial="hidden" animate="show" className="max-w-2xl">
+            <motion.span
+              variants={item}
+              className="inline-block text-base uppercase tracking-wider text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6"
+            >
+              cs.ai · updated daily
+            </motion.span>
+
+            <motion.h1 variants={item} className="mb-6">
+              <span className="block font-heading font-extralight italic text-2xl sm:text-3xl md:text-4xl text-fg/50 tracking-tight mb-1">
+                search past
+              </span>
+              <span className="block leading-[1.05] tracking-tighter text-5xl sm:text-6xl md:text-7xl lg:text-8xl">
+                <span className="text-tighter font-heading font-normal italic">the </span>
+                <span className="font-body font-semibold text-accent dark:text-accent-soft">abstract</span>
+              </span>
+            </motion.h1>
+
+            <motion.div variants={item} className="max-w-2xl mb-10">
+              <p className="text-lg sm:text-xl text-fg/70 leading-relaxed">
+                built on retrieval-augmented generation (RAG) over full paper text.
+                <br />
+                ask a question and get an answer pulled from the actual paper, with the
+                section it came from.
+              </p>
+              <p className="text-sm sm:text-base text-fg/50 leading-relaxed mt-3">
+                search combines semantic similarity with structured filters like
+                category and date, then reranks results with a cross-encoder before
+                anything reaches the model. the corpus updates daily from arxiv,
+                chunked by section rather than left as raw pages.
+              </p>
+            </motion.div>
+
+            <motion.button
+              variants={item}
+              whileHover={
+                shouldReduceMotion
+                  ? undefined
+                  : { scale: 1.04, boxShadow: "0 0 28px var(--color-accent)", transition: { duration: 0.25 } }
+              }
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+              className="group bg-accent text-accent-fg font-medium px-8 py-4 rounded-full text-base sm:text-lg transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent inline-flex items-center gap-2"
+            >
+              start searching
+              <ArrowRight size={17} strokeWidth={2.5} className="transition-transform duration-300 group-hover:translate-x-1" />
+            </motion.button>
           </motion.div>
 
-          <motion.button
-            variants={item}
-            whileHover={
-              shouldReduceMotion
-                ? undefined
-                : { scale: 1.04, boxShadow: "0 0 28px var(--color-accent)", transition: { duration: 0.25 } }
-            }
-            whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
-            className="group bg-accent text-accent-fg font-medium px-8 py-4 rounded-full text-base sm:text-lg transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent inline-flex items-center gap-2"
-          >
-            start searching
-            <ArrowRight size={17} strokeWidth={2.5} className="transition-transform duration-300 group-hover:translate-x-1" />
-          </motion.button>
-        </motion.div>
-
-        <div className="hidden lg:block relative h-[440px]">
-          {previewChunks.map((chunk, i) => (
-            <div key={chunk.section} className="absolute" style={{ top: `${i * 30}%`, left: `${i % 2 === 0 ? 10 : 35}%` }}>
-              <div
-                className={shouldReduceMotion ? "" : "animate-[float_5s_ease-in-out_infinite]"}
-                style={{ animationDelay: `${i * 0.4}s` }}
-              >
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.6, delay: 0.4 + i * 0.15 }}
-                  whileHover={shouldReduceMotion ? undefined : { scale: 1.05, transition: { duration: 0.2 } }}
-                  className="w-96 font-heading rounded-lg border border-accent-soft bg-bg shadow-lg p-6 cursor-default hover:border-accent transition-colors"
+          <div className="hidden lg:block relative h-[440px]">
+            {previewChunks.map((chunk, i) => (
+              <div key={chunk.section} className="absolute" style={{ top: `${i * 30}%`, left: `${i % 2 === 0 ? 10 : 35}%` }}>
+                <div
+                  className={shouldReduceMotion ? "" : "animate-[float_5s_ease-in-out_infinite]"}
+                  style={{ animationDelay: `${i * 0.4}s` }}
                 >
-                  <span className="inline-block text-sm italic tracking-wide text-accent-fg bg-accent rounded px-2 py-0.5 mb-2">
-                    {chunk.section}
-                  </span>
-                  <p className="font-body text-sm text-fg/70 leading-relaxed">{chunk.snippet}</p>
-                </motion.div>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.6, delay: 0.4 + i * 0.15 }}
+                    whileHover={shouldReduceMotion ? undefined : { scale: 1.05, transition: { duration: 0.2 } }}
+                    className="w-96 font-heading rounded-lg border border-accent-soft bg-bg shadow-lg p-6 cursor-default hover:border-accent transition-colors"
+                  >
+                    <span className="inline-block text-sm italic tracking-wide text-accent-fg bg-accent rounded px-2 py-0.5 mb-2">
+                      {chunk.section}
+                    </span>
+                    <p className="font-body text-sm text-fg/70 leading-relaxed">{chunk.snippet}</p>
+                  </motion.div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+
+      <section className="relative px-6 sm:px-10 md:px-16 lg:px-24 py-16">
+        <div className="grid lg:grid-cols-2 gap-16 items-center max-w-6xl mx-auto">
+          <div className="order-2 lg:order-1">
+            <AskChat />
+          </div>
+          <div className="order-1 lg:order-2">
+            <span className="inline-block text-xs sm:text-sm tracking-[0.15em] uppercase text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6">
+              retrieval augmented
+            </span>
+            <h2 className="mb-6 leading-[1.05] tracking-tight text-4xl sm:text-5xl">
+              <span className="font-heading font-normal">talk to the </span>
+              <span className="font-heading italic text-accent dark:text-accent-soft">corpus</span>
+            </h2>
+            <p className="text-base sm:text-lg text-fg/70 leading-relaxed mb-3">
+              every answer is grounded in retrieved paper text, reranked for
+              relevance, and cited back to the paper and section it came from.
+            </p>
+            <p className="text-sm sm:text-base text-fg/50 leading-relaxed">
+              ask something specific about the indexed papers, or start with
+              one of the example questions in the chat.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

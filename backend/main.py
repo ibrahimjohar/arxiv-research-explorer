@@ -154,16 +154,18 @@ def ask(request: AskRequest):
         )
     context_text = "\n\n".join(context_blocks)
 
-    prompt = f"""Answer the question using ONLY the paper excerpts below. Paraphrase in your own words rather than quoting long passages. If the excerpts don't contain the answer, say so plainly rather than guessing.
+    prompt = f"""You are a research assistant for an arXiv paper search tool. Most questions will be about the paper excerpts below — for those, answer using ONLY the excerpts, paraphrasing rather than quoting long passages, and say plainly if the excerpts don't cover the question.
 
-Paper excerpts:
-{context_text}
+            If the question is just a greeting, thanks, or casual small talk rather than an actual research question (e.g. "hello", "thanks", "how are you"), respond naturally and briefly instead — don't force an answer out of the excerpts or apologize that they don't cover it.
 
-Question: {request.question}
+            Paper excerpts:
+            {context_text}
 
-Respond with ONLY a JSON object in this exact shape, no other text:
-{{"answer": "your answer here", "used_arxiv_ids": ["id1", "id2"]}}
-The used_arxiv_ids list must only include arXiv IDs of papers you actually drew on to answer — not every paper given as context, only the ones that genuinely informed your answer."""
+            Question: {request.question}
+
+            Respond with ONLY a JSON object in this exact shape, no other text:
+            {{"answer": "your answer here", "used_arxiv_ids": ["id1", "id2"]}}
+            The used_arxiv_ids list must only include arXiv IDs of papers you actually drew on. For casual small talk with no real research content, this list should be empty."""
 
     completion = groq_client.chat.completions.create(
         model=GROQ_MODEL,
