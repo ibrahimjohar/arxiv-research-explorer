@@ -218,7 +218,6 @@ def run():
     all_records = (
         supabase.table("papers")
         .select("id, title, pdf_url")
-        .in_("arxiv_id", all_arxiv_ids)
         .execute()
         .data
     )
