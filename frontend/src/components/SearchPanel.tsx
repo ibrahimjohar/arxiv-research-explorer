@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, ExternalLink, SearchX } from "lucide-react";
 import { searchPapers, SearchResult } from "@/lib/api";
+import { useState, useRef, useEffect, FormEvent } from "react";
 
 const CATEGORIES = [
   { value: "", label: "all categories" },
@@ -100,6 +100,63 @@ function SkeletonCard() {
   );
 }
 
+function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selected = CATEGORIES.find((c) => c.value === value) ?? CATEGORIES[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 bg-accent-soft/10 border border-accent-soft/40 rounded-full pl-4 pr-3 py-2 text-xs uppercase tracking-wide text-fg/70 hover:border-accent transition-colors"
+      >
+        {selected.label}
+        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
+          <ChevronDown size={13} className="text-fg/40" />
+        </motion.span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-0 top-full mt-2 w-44 rounded-lg border border-accent-soft bg-bg shadow-xl overflow-hidden z-20 py-1"
+          >
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => {
+                  onChange(c.value);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-4 py-2 text-xs uppercase tracking-wide transition-colors ${
+                  c.value === value ? "bg-accent text-accent-fg" : "text-fg/70 hover:bg-accent-soft/10"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function SearchPanel() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
@@ -184,20 +241,7 @@ export default function SearchPanel() {
         </form>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="appearance-none bg-accent-soft/10 border border-accent-soft/40 rounded-full pl-4 pr-9 py-2 text-xs uppercase tracking-wide text-fg/70 outline-none cursor-pointer hover:border-accent transition-colors"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-fg/40 pointer-events-none" />
-          </div>
+          <CategoryDropdown value={category} onChange={setCategory} />
 
           <div className="flex gap-1.5">
             {DATE_PRESETS.map((preset) => (
