@@ -22,10 +22,11 @@ USER_AGENT = "arxiv-research-explorer/0.1 (portfolio project; contact: your-emai
 
 CHUNK_WORDS = 400
 CHUNK_OVERLAP = 50
+MIN_CHUNK_WORDS = 40  # below this, a "chunk" is almost certainly title/header noise rather than real content — discarded outright
 
 SECTION_PATTERN = re.compile(
     r"^\s*(\d+\.?\d*\.?\s*|[IVXLC]+\.?\s*)?"
-    r"(introduction|background|related work|methodology|method|approach|"
+    r"(abstract|introduction|background|related work|methodology|method|approach|"
     r"experiments?( and results)?|evaluation|results?|discussion|"
     r"conclusions?|limitations|future work)\s*$",
     re.IGNORECASE,
@@ -165,6 +166,8 @@ def process_paper_fulltext(paper_id, pdf_url):
             continue
 
         for chunk in chunk_text(page_content):
+            if len(chunk.split()) < MIN_CHUNK_WORDS:
+                continue  # too short to be real content — almost certainly title/header noise
             chunk_rows.append({
                 "paper_id": paper_id,
                 "section": current_section,
