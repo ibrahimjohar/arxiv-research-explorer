@@ -68,5 +68,8 @@ export async function searchPapers(query: string, filters?: Filters): Promise<Se
   });
   if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
   const data = await res.json();
-  return data.results;
+  //the backend returns a raw JSON array directly (response_model=List[SearchResult]),
+  //not wrapped in a { results: [...] } object — Array.isArray as a safety net in
+  //case that ever changes on the backend side without this being updated to match.
+  return Array.isArray(data) ? data : [];
 }

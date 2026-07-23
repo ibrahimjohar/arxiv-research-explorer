@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import AskChat from "@/components/AskChat";
+import SearchPanel from "@/components/SearchPanel";
 
 const previewChunks = [
   { section: "introduction", snippet: "we propose a dual-attention framework for..." },
@@ -75,26 +76,69 @@ function resolveOverlap(input: Node[], minDist = 11): Node[] {
   return result;
 }
 
+type Mode = "search" | "ask";
+
+const modeCopy: Record<Mode, { eyebrow: string; heading: [string, string]; body: [string, string] }> = {
+  search: {
+    eyebrow: "hybrid search",
+    heading: ["find the", "paper"],
+    body: [
+      "semantic similarity combined with structured filters — category, date — reranked with a cross-encoder before results reach you.",
+      "search returns the actual papers, not a synthesized answer. use ask instead if you want a direct response grounded in what's retrieved.",
+    ],
+  },
+  ask: {
+    eyebrow: "retrieval augmented",
+    heading: ["talk to the", "corpus"],
+    body: [
+      "every answer is grounded in retrieved paper text, reranked for relevance, and cited back to the paper and section it came from.",
+      "ask something specific about the indexed papers, or start with one of the example questions in the chat.",
+    ],
+  },
+};
+
+function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void }) {
+  const options: { key: Mode; label: string }[] = [
+    { key: "search", label: "search" },
+    { key: "ask", label: "ask" },
+  ];
+  return (
+    <div className="inline-flex items-center gap-1 bg-accent-soft/10 border border-accent-soft/40 rounded-full p-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          onClick={() => setMode(o.key)}
+          className="relative px-6 py-2 text-sm rounded-full"
+        >
+          {mode === o.key && (
+            <motion.div
+              layoutId="modeToggleBg"
+              transition={{ type: "spring", stiffness: 500, damping: 35 }}
+              className="absolute inset-0 bg-accent rounded-full"
+            />
+          )}
+          <span className={`relative z-10 transition-colors ${mode === o.key ? "text-accent-fg" : "text-fg/60 hover:text-fg"}`}>
+            {o.label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const shouldReduceMotion = useReducedMotion();
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const graphRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
+  const [mode, setMode] = useState<Mode>("search");
 
   useEffect(() => {
     const el = graphRef.current;
     if (!el) return;
-    const updateDims = () => {
-      const width = el.clientWidth;
-      const height = el.clientHeight;
-      console.log("graph dims measured:", width, height); // temporary — remove after debugging
-      setDims({ width, height });
-    };
+    const updateDims = () => setDims({ width: el.clientWidth, height: el.clientHeight });
     updateDims();
-    // Extra safety net: re-measure on the next animation frame and on window
-    // resize, so a race against layout/font-loading can't leave dims stuck at
-    // a stale zero with nothing left to correct it.
     const raf = requestAnimationFrame(updateDims);
     window.addEventListener("resize", updateDims);
     const observer = new ResizeObserver(updateDims);
@@ -122,8 +166,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [shouldReduceMotion]);
 
-  
-
   const nodeMap = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
   const container = {
@@ -140,11 +182,15 @@ export default function Home() {
     },
   };
 
+  const goToSearch = () => {
+    setMode("search");
+    document.getElementById("explore")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const activeCopy = modeCopy[mode];
+
   return (
     <div className="relative overflow-hidden">
-      {/* Single continuous ambient glow layer spanning the whole page —
-          previously each section owned its own glow, clipped hard at that
-          section's own boundary, which is what caused the visible seam. */}
       <motion.div
         className="pointer-events-none absolute top-[10vh] right-0 w-[600px] h-[600px] bg-accent/10 blur-[130px] rounded-full"
         animate={shouldReduceMotion ? {} : { x: [0, 30, -10, 0], y: [0, -20, 15, 0], scale: [1, 1.08, 0.96, 1] }}
@@ -292,6 +338,7 @@ export default function Home() {
 
             <motion.button
               variants={item}
+              onClick={goToSearch}
               whileHover={
                 shouldReduceMotion
                   ? undefined
@@ -331,27 +378,60 @@ export default function Home() {
         </div>
       </main>
 
-      <section className="relative px-6 sm:px-10 md:px-16 lg:px-24 py-16">
-        <div className="grid lg:grid-cols-2 gap-16 items-center max-w-6xl mx-auto">
-          <div className="order-2 lg:order-1">
-            <AskChat />
+      <section id="explore" className="relative px-6 sm:px-10 md:px-16 lg:px-24 py-16">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex justify-center mb-10">
+            <ModeToggle mode={mode} setMode={setMode} />
           </div>
-          <div className="order-1 lg:order-2">
-            <span className="inline-block text-xs sm:text-sm tracking-[0.15em] uppercase text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6">
-              retrieval augmented
-            </span>
-            <h2 className="mb-6 leading-[1.05] tracking-tight text-4xl sm:text-5xl">
-              <span className="font-heading font-normal">talk to the </span>
-              <span className="font-heading italic text-accent dark:text-accent-soft">corpus</span>
-            </h2>
-            <p className="text-base sm:text-lg text-fg/70 leading-relaxed mb-3">
-              every answer is grounded in retrieved paper text, reranked for
-              relevance, and cited back to the paper and section it came from.
-            </p>
-            <p className="text-sm sm:text-base text-fg/50 leading-relaxed">
-              ask something specific about the indexed papers, or start with
-              one of the example questions in the chat.
-            </p>
+
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <div className="order-2 lg:order-1">
+              <AnimatePresence mode="wait">
+                {mode === "search" ? (
+                  <motion.div
+                    key="search"
+                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  >
+                    <SearchPanel />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="ask"
+                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  >
+                    <AskChat />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={mode}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                >
+                  <span className="inline-block text-xs sm:text-sm tracking-[0.15em] uppercase text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6">
+                    {activeCopy.eyebrow}
+                  </span>
+                  <h2 className="mb-6 leading-[1.05] tracking-tight text-4xl sm:text-5xl">
+                    <span className="font-heading font-normal">{activeCopy.heading[0]} </span>
+                    <span className="font-heading italic text-accent dark:text-accent-soft">{activeCopy.heading[1]}</span>
+                  </h2>
+                  <p className="text-base sm:text-lg text-fg/70 leading-relaxed mb-3">{activeCopy.body[0]}</p>
+                  <p className="text-sm sm:text-base text-fg/50 leading-relaxed">{activeCopy.body[1]}</p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </section>
