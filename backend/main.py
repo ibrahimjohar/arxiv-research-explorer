@@ -1,4 +1,12 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import torch
+
+torch.set_num_threads(1)
+
 from typing import Optional, List
 
 from fastapi import FastAPI
@@ -17,20 +25,27 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 print("Loading models (happens once, at startup)...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-#figures are searched via title+caption text, embedded with this same
-#model - no separate CLIP model.
+# Figures are searched via title+caption text, embedded with this same
+# model — no separate CLIP model. See ingest.py for the full history of why.
 
-CANDIDATE_POOL_SIZE = 30    #broad dense-search net
-FINAL_RESULT_COUNT = 5      #after reranking
+CANDIDATE_POOL_SIZE = 15    # reduced from 30 to fit Render's free-tier 512MB
+                            # memory ceiling — a real, named trade-off: a
+                            # genuinely good chunk ranked just outside this
+                            # pool won't be considered. Easily reversible
+                            # later if moving to a larger instance.
+FINAL_RESULT_COUNT = 5      # after reranking
+RERANKER_BATCH_SIZE = 8     # caps how many pairs the cross-encoder scores at
+                            # once — same rankings either way, just a smaller
+                            # peak memory footprint per request
 
 FIGURE_CANDIDATE_COUNT = 6
-FIGURE_SIMILARITY_THRESHOLD = 0.3  #confirmed against real query/figure pairs
+FIGURE_SIMILARITY_THRESHOLD = 0.3  # confirmed against real query/figure pairs — see notes in prior commits
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],    #tighten this to the real frontend domain once deployed
+    allow_origins=["*"],    # tighten this to the real frontend domain once deployed
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -82,7 +97,7 @@ def search(request: SearchRequest):
     results = []
     if candidates:
         pairs = [[request.query, c["content"]] for c in candidates]
-        scores = reranker.predict(pairs)
+        scores = reranker.predict(pairs, batch_size=RERANKER_BATCH_SIZE)
         for candidate, score in zip(candidates, scores):
             candidate["rerank_score"] = float(score)
         candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
@@ -130,7 +145,8 @@ from groq import Groq
 
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 GROQ_MODEL = "openai/gpt-oss-120b"
-#Groq's own docs mark this as a preview model - intended for evaluation, not production. but it's currently the only vision-capable option available.
+# Groq's own docs mark this as a preview model — intended for evaluation, not
+# production — but it's currently the only vision-capable option available.
 VISION_MODEL = "qwen/qwen3.6-27b"
 
 
@@ -175,7 +191,7 @@ def ask(request: AskRequest):
         )
 
     pairs = [[request.question, c["content"]] for c in candidates]
-    scores = reranker.predict(pairs)
+    scores = reranker.predict(pairs, batch_size=RERANKER_BATCH_SIZE)
     for candidate, score in zip(candidates, scores):
         candidate["rerank_score"] = float(score)
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
@@ -190,8 +206,6 @@ def ask(request: AskRequest):
         )
     context_text = "\n\n".join(context_blocks)
 
-    #same embedding, same threshold as /search's figure retrieval. Only the single best candidate is considered, keeps the "should this route to
-    #the vision model" decision simple and unambiguous, rather than trying to juggle multiple images in one answer.
     figure_candidates = supabase.rpc(
         "match_figures",
         {
@@ -247,19 +261,14 @@ def ask(request: AskRequest):
         "response_format": {"type": "json_object"},
     }
     if model_to_use == VISION_MODEL:
-        #Qwen models default to a "thinking" reasoning mode before the final answer - combined with strict JSON mode, this preview model was
-        #returning a completely empty completion, apparently spending its output budget on reasoning with nothing left for the visible answer.
-        #Disabling reasoning fixes this.
         completion_kwargs["reasoning_effort"] = "none"
 
     try:
         completion = groq_client.chat.completions.create(**completion_kwargs)
     except Exception as e:
         if model_to_use == VISION_MODEL:
-            #Groq's own docs mark this model as preview/eval-only, not production-stable - if it fails outright, fall back to the
-            #proven text-only model rather than surfacing a 500 to the user.
             print(f"Vision model call failed, falling back to text-only: {e}", flush=True)
-            best_figure = None      #so the returned_figure logic below correctly omits it
+            best_figure = None
             completion = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
@@ -285,8 +294,6 @@ def ask(request: AskRequest):
         seen.add(c["arxiv_id"])
         sources.append(Source(title=c["title"], arxiv_id=c["arxiv_id"], section=c["section"]))
 
-    #the figure is only returned if the model's own used_arxiv_ids actually includes its paper - same discipline as text citations.
-    #A figure that was merely retrieved but not actually drawn on should never appear as "used."
     returned_figure = None
     if best_figure and best_figure["arxiv_id"] in used_ids:
         returned_figure = FigureResult(
