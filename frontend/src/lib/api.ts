@@ -30,6 +30,7 @@ export type AskSource = {
 export type AskResponse = {
   answer: string;
   sources: AskSource[];
+  figure: FigureResult | null;
 };
 
 type Filters = { category?: string; date_from?: string; date_to?: string };
@@ -69,7 +70,12 @@ export async function askQuestion(question: string, filters?: Filters): Promise<
     body: JSON.stringify({ question, ...filters }),
   });
   if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return {
+    answer: data.answer,
+    sources: Array.isArray(data.sources) ? data.sources : [],
+    figure: data.figure ?? null,
+  };
 }
 
 export async function searchPapers(query: string, filters?: Filters): Promise<SearchResponse> {
@@ -80,9 +86,6 @@ export async function searchPapers(query: string, filters?: Filters): Promise<Se
   });
   if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
   const data = await res.json();
-  // Backend now returns { results: [...], figures: [...] } instead of a bare
-  // array — the Array.isArray checks here are a safety net against either
-  // field being missing or malformed, not an assumption they always will be.
   return {
     results: Array.isArray(data.results) ? data.results : [],
     figures: Array.isArray(data.figures) ? data.figures : [],

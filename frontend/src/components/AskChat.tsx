@@ -3,11 +3,11 @@
 import { useState, useRef, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, AlertCircle, ExternalLink } from "lucide-react";
-import { askQuestion, AskSource } from "@/lib/api";
+import { askQuestion, AskSource, FigureResult } from "@/lib/api";
 
 type Message =
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string; sources: AskSource[] }
+  | { role: "assistant"; content: string; sources: AskSource[]; figure: FigureResult | null }
   | { role: "error"; content: string };
 
 const EXAMPLE_QUESTIONS = [
@@ -16,15 +16,14 @@ const EXAMPLE_QUESTIONS = [
   "what optimizers are common for training large models?",
 ];
 
+// Apple Messages-style bubble pop: scales in with a springy overshoot rather
+// than a plain fade/slide.
 const bubblePop = {
   initial: { opacity: 0, scale: 0.7, y: 8 },
   animate: { opacity: 1, scale: 1, y: 0 },
   transition: { type: "spring" as const, stiffness: 500, damping: 30 },
 };
 
-// Explicit spring transition for the layout reflow specifically — separate
-// from bubblePop's entrance transition — so the "older messages get pushed
-// up" motion reads as deliberately smooth rather than a default-speed snap.
 const layoutTransition = { type: "spring" as const, stiffness: 300, damping: 30 };
 
 function TypingIndicator() {
@@ -66,6 +65,29 @@ function SourceChip({ source }: { source: AskSource }) {
   );
 }
 
+function FigureCard({ figure }: { figure: FigureResult }) {
+  return (
+    <motion.a
+      href={figure.arxiv_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...bubblePop}
+      whileHover={{ scale: 1.02 }}
+      className="block max-w-xs rounded-lg overflow-hidden border border-accent-soft/40 hover:border-accent bg-accent-soft/5 transition-colors"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={figure.storage_path}
+        alt={figure.caption ?? figure.title}
+        className="w-full object-cover"
+      />
+      {figure.caption && (
+        <p className="text-[11px] text-fg/60 leading-snug px-3 py-2">{figure.caption}</p>
+      )}
+    </motion.a>
+  );
+}
+
 export default function AskChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -83,8 +105,13 @@ export default function AskChat() {
     setInput("");
     setIsLoading(true);
     try {
+      // askQuestion silently retries through cold-start-style failures — by
+      // the time this ever throws, real retries have already been exhausted
       const res = await askQuestion(question);
-      setMessages((prev) => [...prev, { role: "assistant", content: res.answer, sources: res.sources }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: res.answer, sources: res.sources, figure: res.figure },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -102,9 +129,7 @@ export default function AskChat() {
 
   return (
     <div className="w-full flex flex-col h-[70vh] border border-accent-soft/30 rounded-lg overflow-hidden bg-bg shadow-xl">
-      {/* Decorative macOS-style window chrome — purely visual, not wired to
-          any real window controls */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-accent-soft/20 bg-accent-soft/5">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-accent-soft/20 bg-accent-soft/5 shrink-0">
         <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
         <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
         <span className="w-3 h-3 rounded-full bg-[#28c840]" />
@@ -139,6 +164,10 @@ export default function AskChat() {
             </div>
           </motion.div>
         ) : (
+          // mt-auto pins this block to the bottom of the scroll area whenever
+          // the conversation is shorter than the pane — matching how every
+          // real chat app looks with few messages. Once content overflows,
+          // mt-auto has no room left to apply and normal scrolling takes over.
           <div className="mt-auto flex flex-col gap-3">
             <AnimatePresence initial={false}>
               {messages.map((msg, i) => (
@@ -165,6 +194,7 @@ export default function AskChat() {
                       >
                         {msg.content}
                       </motion.div>
+                      {msg.figure && <FigureCard figure={msg.figure} />}
                       {msg.sources.length > 0 && (
                         <motion.div
                           initial={{ opacity: 0 }}

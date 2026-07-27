@@ -17,27 +17,20 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 print("Loading models (happens once, at startup)...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-# Figures are searched via their caption text, embedded with this same model —
-# no separate CLIP model. CLIP produced noisy cross-paper matches for
-# scientific plots/diagrams specifically; genuine captions embedded as plain
-# text, in the same space as chunk search, turned out to be the more
-# reliable signal — and it also means one fewer model competing for memory.
+#figures are searched via title+caption text, embedded with this same
+#model - no separate CLIP model.
 
-CANDIDATE_POOL_SIZE = 30    # broad dense-search net
-FINAL_RESULT_COUNT = 5      # after reranking
+CANDIDATE_POOL_SIZE = 30    #broad dense-search net
+FINAL_RESULT_COUNT = 5      #after reranking
 
-FIGURE_CANDIDATE_COUNT = 6   # how many figure candidates to pull per search
-# Same embedding space as chunk search now (both all-MiniLM-L6-v2 text
-# embeddings), so this threshold is on a genuinely comparable scale to real
-# text-to-text similarity — still a starting value pending real tuning,
-# but no longer mismatched the way the CLIP cross-modal score was.
-FIGURE_SIMILARITY_THRESHOLD = 0.3
+FIGURE_CANDIDATE_COUNT = 6
+FIGURE_SIMILARITY_THRESHOLD = 0.3  #confirmed against real query/figure pairs
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],    # tighten this to the real frontend domain once deployed
+    allow_origins=["*"],    #tighten this to the real frontend domain once deployed
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -88,16 +81,12 @@ def search(request: SearchRequest):
 
     results = []
     if candidates:
-        # rerank: score each candidate chunk against the actual query text
-        # together, not independently — this is the precision step dense
-        # search alone can't do
         pairs = [[request.query, c["content"]] for c in candidates]
         scores = reranker.predict(pairs)
         for candidate, score in zip(candidates, scores):
             candidate["rerank_score"] = float(score)
         candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
-        # roll up to one result per paper, its single best-scoring chunk
         seen_papers = set()
         for c in candidates:
             if c["paper_id"] in seen_papers:
@@ -114,9 +103,6 @@ def search(request: SearchRequest):
             if len(results) >= FINAL_RESULT_COUNT:
                 break
 
-    # Figures now live in the same embedding space as chunks (both
-    # all-MiniLM-L6-v2), so the query embedding computed above is reused
-    # directly — no second model, no second encode call.
     figure_candidates = supabase.rpc(
         "match_figures",
         {
@@ -125,7 +111,6 @@ def search(request: SearchRequest):
             "filter_category": request.category,
         },
     ).execute().data or []
-    print("Figure candidates:", [(round(f["similarity"], 3), f.get("caption", "")[:80]) for f in figure_candidates], flush=True)  # temporary — remove after tuning the threshold
 
     figures = [
         FigureResult(
@@ -145,6 +130,8 @@ from groq import Groq
 
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 GROQ_MODEL = "openai/gpt-oss-120b"
+#Groq's own docs mark this as a preview model - intended for evaluation, not production. but it's currently the only vision-capable option available.
+VISION_MODEL = "qwen/qwen3.6-27b"
 
 
 class AskRequest(BaseModel):
@@ -163,6 +150,7 @@ class Source(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     sources: List[Source]
+    figure: Optional[FigureResult] = None
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -193,8 +181,6 @@ def ask(request: AskRequest):
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
     top_chunks = candidates[:FINAL_RESULT_COUNT]
-    # most relevant last, right next to the question — counters the
-    # lost-in-the-middle effect where models attend better to context edges
     top_chunks.reverse()
 
     context_blocks = []
@@ -204,12 +190,37 @@ def ask(request: AskRequest):
         )
     context_text = "\n\n".join(context_blocks)
 
+    #same embedding, same threshold as /search's figure retrieval. Only the single best candidate is considered, keeps the "should this route to
+    #the vision model" decision simple and unambiguous, rather than trying to juggle multiple images in one answer.
+    figure_candidates = supabase.rpc(
+        "match_figures",
+        {
+            "query_embedding": query_embedding,
+            "match_count": FIGURE_CANDIDATE_COUNT,
+            "filter_category": request.category,
+        },
+    ).execute().data or []
+
+    best_figure = None
+    if figure_candidates and figure_candidates[0]["similarity"] >= FIGURE_SIMILARITY_THRESHOLD:
+        best_figure = figure_candidates[0]
+
+    figure_context = ""
+    if best_figure:
+        figure_context = (
+            f"\n\nAn image is also attached, from \"{best_figure['title']}\" "
+            f"(arXiv:{best_figure['arxiv_id']}). It is described as: "
+            f"{best_figure['caption']}. Use it to inform your answer if relevant "
+            f"to the question."
+        )
+
     prompt = f"""You are a research assistant for an arXiv paper search tool. Most questions will be about the paper excerpts below — for those, answer using ONLY the excerpts, paraphrasing rather than quoting long passages, and say plainly if the excerpts don't cover the question.
 
             If the question is just a greeting, thanks, or casual small talk rather than an actual research question (e.g. "hello", "thanks", "how are you"), respond naturally and briefly instead — don't force an answer out of the excerpts or apologize that they don't cover it.
 
             Paper excerpts:
             {context_text}
+            {figure_context}
 
             Question: {request.question}
 
@@ -217,11 +228,45 @@ def ask(request: AskRequest):
             {{"answer": "your answer here", "used_arxiv_ids": ["id1", "id2"]}}
             The used_arxiv_ids list must only include arXiv IDs of papers you actually drew on. For casual small talk with no real research content, this list should be empty."""
 
-    completion = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-    )
+    if best_figure:
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": best_figure["storage_path"]}},
+            ],
+        }]
+        model_to_use = VISION_MODEL
+    else:
+        messages = [{"role": "user", "content": prompt}]
+        model_to_use = GROQ_MODEL
+
+    completion_kwargs = {
+        "model": model_to_use,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+    if model_to_use == VISION_MODEL:
+        #Qwen models default to a "thinking" reasoning mode before the final answer - combined with strict JSON mode, this preview model was
+        #returning a completely empty completion, apparently spending its output budget on reasoning with nothing left for the visible answer.
+        #Disabling reasoning fixes this.
+        completion_kwargs["reasoning_effort"] = "none"
+
+    try:
+        completion = groq_client.chat.completions.create(**completion_kwargs)
+    except Exception as e:
+        if model_to_use == VISION_MODEL:
+            #Groq's own docs mark this model as preview/eval-only, not production-stable - if it fails outright, fall back to the
+            #proven text-only model rather than surfacing a 500 to the user.
+            print(f"Vision model call failed, falling back to text-only: {e}", flush=True)
+            best_figure = None      #so the returned_figure logic below correctly omits it
+            completion = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        else:
+            raise
 
     import json
     try:
@@ -229,8 +274,6 @@ def ask(request: AskRequest):
         answer_text = parsed["answer"]
         used_ids = set(parsed.get("used_arxiv_ids", []))
     except (json.JSONDecodeError, KeyError):
-        # fall back gracefully rather than crash if the model doesn't
-        # follow the format for some reason
         answer_text = completion.choices[0].message.content
         used_ids = {c["arxiv_id"] for c in top_chunks}
 
@@ -242,4 +285,15 @@ def ask(request: AskRequest):
         seen.add(c["arxiv_id"])
         sources.append(Source(title=c["title"], arxiv_id=c["arxiv_id"], section=c["section"]))
 
-    return AskResponse(answer=answer_text, sources=sources)
+    #the figure is only returned if the model's own used_arxiv_ids actually includes its paper - same discipline as text citations.
+    #A figure that was merely retrieved but not actually drawn on should never appear as "used."
+    returned_figure = None
+    if best_figure and best_figure["arxiv_id"] in used_ids:
+        returned_figure = FigureResult(
+            caption=best_figure.get("caption"),
+            storage_path=best_figure["storage_path"],
+            arxiv_url=f"https://arxiv.org/abs/{best_figure['arxiv_id']}",
+            title=best_figure["title"],
+        )
+
+    return AskResponse(answer=answer_text, sources=sources, figure=returned_figure)
