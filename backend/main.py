@@ -17,15 +17,27 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 print("Loading models (happens once, at startup)...")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+# Figures are searched via their caption text, embedded with this same model —
+# no separate CLIP model. CLIP produced noisy cross-paper matches for
+# scientific plots/diagrams specifically; genuine captions embedded as plain
+# text, in the same space as chunk search, turned out to be the more
+# reliable signal — and it also means one fewer model competing for memory.
 
-CANDIDATE_POOL_SIZE = 30    #broad dense-search net
-FINAL_RESULT_COUNT = 5      #after reranking
+CANDIDATE_POOL_SIZE = 30    # broad dense-search net
+FINAL_RESULT_COUNT = 5      # after reranking
+
+FIGURE_CANDIDATE_COUNT = 6   # how many figure candidates to pull per search
+# Same embedding space as chunk search now (both all-MiniLM-L6-v2 text
+# embeddings), so this threshold is on a genuinely comparable scale to real
+# text-to-text similarity — still a starting value pending real tuning,
+# but no longer mismatched the way the CLIP cross-modal score was.
+FIGURE_SIMILARITY_THRESHOLD = 0.3
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],    #tighten this to the real frontend domain once deployed
+    allow_origins=["*"],    # tighten this to the real frontend domain once deployed
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -47,7 +59,19 @@ class SearchResult(BaseModel):
     arxiv_url: str
 
 
-@app.post("/search", response_model=List[SearchResult])
+class FigureResult(BaseModel):
+    caption: Optional[str]
+    storage_path: str
+    arxiv_url: str
+    title: str
+
+
+class SearchResponse(BaseModel):
+    results: List[SearchResult]
+    figures: List[FigureResult]
+
+
+@app.post("/search", response_model=SearchResponse)
 def search(request: SearchRequest):
     query_embedding = embedder.encode(request.query).tolist()
 
@@ -62,35 +86,60 @@ def search(request: SearchRequest):
         },
     ).execute().data
 
-    if not candidates:
-        return []
-
-    #rerank: score each candidate chunk against the actual query text together, not independently, this is the precision step dense search alone can't do
-    pairs = [[request.query, c["content"]] for c in candidates]
-    scores = reranker.predict(pairs)
-    for candidate, score in zip(candidates, scores):
-        candidate["rerank_score"] = float(score)
-    candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
-
-    #roll up to one result per paper, its single best-scoring chunk
-    seen_papers = set()
     results = []
-    for c in candidates:
-        if c["paper_id"] in seen_papers:
-            continue
-        seen_papers.add(c["paper_id"])
-        results.append(SearchResult(
-            title=c["title"],
-            authors=c["authors"],
-            published_date=str(c["published_date"]),
-            section=c["section"],
-            matching_snippet=c["content"][:300],
-            arxiv_url=f"https://arxiv.org/abs/{c['arxiv_id']}",
-        ))
-        if len(results) >= FINAL_RESULT_COUNT:
-            break
+    if candidates:
+        # rerank: score each candidate chunk against the actual query text
+        # together, not independently — this is the precision step dense
+        # search alone can't do
+        pairs = [[request.query, c["content"]] for c in candidates]
+        scores = reranker.predict(pairs)
+        for candidate, score in zip(candidates, scores):
+            candidate["rerank_score"] = float(score)
+        candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
-    return results
+        # roll up to one result per paper, its single best-scoring chunk
+        seen_papers = set()
+        for c in candidates:
+            if c["paper_id"] in seen_papers:
+                continue
+            seen_papers.add(c["paper_id"])
+            results.append(SearchResult(
+                title=c["title"],
+                authors=c["authors"],
+                published_date=str(c["published_date"]),
+                section=c["section"],
+                matching_snippet=c["content"][:300],
+                arxiv_url=f"https://arxiv.org/abs/{c['arxiv_id']}",
+            ))
+            if len(results) >= FINAL_RESULT_COUNT:
+                break
+
+    # Figures now live in the same embedding space as chunks (both
+    # all-MiniLM-L6-v2), so the query embedding computed above is reused
+    # directly — no second model, no second encode call.
+    figure_candidates = supabase.rpc(
+        "match_figures",
+        {
+            "query_embedding": query_embedding,
+            "match_count": FIGURE_CANDIDATE_COUNT,
+            "filter_category": request.category,
+        },
+    ).execute().data or []
+    print("Figure candidates:", [(round(f["similarity"], 3), f.get("caption", "")[:80]) for f in figure_candidates], flush=True)  # temporary — remove after tuning the threshold
+
+    figures = [
+        FigureResult(
+            caption=f.get("caption"),
+            storage_path=f["storage_path"],
+            arxiv_url=f"https://arxiv.org/abs/{f['arxiv_id']}",
+            title=f["title"],
+        )
+        for f in figure_candidates
+        if f["similarity"] >= FIGURE_SIMILARITY_THRESHOLD
+    ]
+
+    return SearchResponse(results=results, figures=figures)
+
 
 from groq import Groq
 
@@ -144,7 +193,8 @@ def ask(request: AskRequest):
     candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
 
     top_chunks = candidates[:FINAL_RESULT_COUNT]
-    #most relevant last, right next to the question, counters the lost-in-the-middle effect where models attend better to context edges
+    # most relevant last, right next to the question — counters the
+    # lost-in-the-middle effect where models attend better to context edges
     top_chunks.reverse()
 
     context_blocks = []
@@ -179,8 +229,8 @@ def ask(request: AskRequest):
         answer_text = parsed["answer"]
         used_ids = set(parsed.get("used_arxiv_ids", []))
     except (json.JSONDecodeError, KeyError):
-        #fall back gracefully rather than crash if the model doesn't
-        #follow the format for some reason
+        # fall back gracefully rather than crash if the model doesn't
+        # follow the format for some reason
         answer_text = completion.choices[0].message.content
         used_ids = {c["arxiv_id"] for c in top_chunks}
 

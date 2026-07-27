@@ -9,6 +9,18 @@ export type SearchResult = {
   arxiv_url: string;
 };
 
+export type FigureResult = {
+  caption: string | null;
+  storage_path: string;
+  arxiv_url: string;
+  title: string;
+};
+
+export type SearchResponse = {
+  results: SearchResult[];
+  figures: FigureResult[];
+};
+
 export type AskSource = {
   title: string;
   arxiv_id: string;
@@ -60,7 +72,7 @@ export async function askQuestion(question: string, filters?: Filters): Promise<
   return res.json();
 }
 
-export async function searchPapers(query: string, filters?: Filters): Promise<SearchResult[]> {
+export async function searchPapers(query: string, filters?: Filters): Promise<SearchResponse> {
   const res = await fetchWithRetry(`${API_URL}/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -68,8 +80,11 @@ export async function searchPapers(query: string, filters?: Filters): Promise<Se
   });
   if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
   const data = await res.json();
-  //the backend returns a raw JSON array directly (response_model=List[SearchResult]),
-  //not wrapped in a { results: [...] } object — Array.isArray as a safety net in
-  //case that ever changes on the backend side without this being updated to match.
-  return Array.isArray(data) ? data : [];
+  // Backend now returns { results: [...], figures: [...] } instead of a bare
+  // array — the Array.isArray checks here are a safety net against either
+  // field being missing or malformed, not an assumption they always will be.
+  return {
+    results: Array.isArray(data.results) ? data.results : [],
+    figures: Array.isArray(data.figures) ? data.figures : [],
+  };
 }

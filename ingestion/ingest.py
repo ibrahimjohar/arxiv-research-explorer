@@ -20,14 +20,15 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 ARXIV_CATEGORY = "cs.AI"
 PAPERS_PER_RUN = 30
+MAX_PAPERS_TO_PROCESS_PER_RUN = 15
 USER_AGENT = "arxiv-research-explorer/0.1 (portfolio project; contact: your-email@example.com)"
 
 CHUNK_WORDS = 400
 CHUNK_OVERLAP = 50
-MIN_CHUNK_WORDS = 40  # below this, a "chunk" is almost certainly title/header noise — discarded outright
+MIN_CHUNK_WORDS = 40  #below this, a "chunk" is almost certainly title/header noise - discarded outright
 
 FIGURES_BUCKET = "figures"
-MIN_FIGURE_DIM = 100  # px — below this, almost certainly a logo/icon/decorative separator, not a real figure
+MIN_FIGURE_DIM = 100  # px — below this, almost certainly a logo/icon/decorative separator
 MAX_FIGURE_DIM = 800  # px — resized down to this to conserve the 1GB Storage quota
 
 SECTION_PATTERN = re.compile(
@@ -42,9 +43,11 @@ FIGURE_CAPTION_PATTERN = re.compile(r"^\s*(Fig(?:ure)?\.?\s*\d+)\s*[:.]?\s*(.*)$
 
 print("Loading embedding model...", flush=True)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-print("Loading CLIP model for figure embeddings...", flush=True)
-clip_embedder = SentenceTransformer("clip-ViT-B-32")
+# Figures are embedded via title + caption together using this same model —
+# not a separate CLIP model. CLIP was tried first, then caption-only text
+# embedding — both produced weak or off-topic matches for scientific plots.
+# Prepending the paper's title gives the embedding real topical context that
+# a short, generic caption alone often lacks.
 
 
 def request_with_retry(url, max_retries=3, **kwargs):
@@ -134,9 +137,9 @@ def embed_texts(texts):
 
 
 def extract_text_chunks(doc, paper_id):
-    """Same chunking/section logic as before, now operating on an already-open
-    fitz doc instead of re-opening it — shares one download+parse pass with
-    figure extraction rather than downloading the same PDF twice."""
+    """Same chunking/section logic as before, operating on an already-open
+    fitz doc — shares one download+parse pass with figure extraction rather
+    than downloading the same PDF twice."""
     chunk_rows = []
     current_section = None
     hit_references = False
@@ -197,9 +200,9 @@ def find_caption_near(text_blocks, img_bbox, max_distance=80):
 
 def extract_figures(doc):
     """Extract qualifying embedded images with best-effort captions, resized
-    and re-encoded as JPEG. Returns raw candidates — upload to Storage and
-    CLIP embedding happen in a separate step, since those involve network
-    calls rather than pure PDF parsing."""
+    and re-encoded as JPEG. Returns raw candidates — upload happens in a
+    separate step, since that involves a network call rather than pure PDF
+    parsing."""
     figures = []
 
     for page_index in range(len(doc)):
@@ -238,16 +241,19 @@ def extract_figures(doc):
             figures.append({
                 "page_number": page_number,
                 "caption": caption,
-                "pil_image": resized,
                 "jpeg_bytes": buf.getvalue(),
             })
 
     return figures
 
 
-def upload_and_embed_figures(paper_id, arxiv_id, figures):
-    """Uploads each qualifying figure to Supabase Storage and embeds it with
-    CLIP, returning rows ready for insertion into the figures table."""
+def upload_and_embed_figures(paper_id, arxiv_id, paper_title, figures):
+    """Uploads each qualifying figure to Supabase Storage. Figures with a
+    detected caption are embedded (title + caption together, via the same
+    text embedder used for chunks) so they become searchable; figures
+    without a caption are still stored for display purposes but left with
+    embedding=None — genuinely unsearchable, rather than forcing a weak
+    signal just to have something."""
     rows = []
     for i, fig in enumerate(figures):
         path = f"{arxiv_id}/{i}.jpg"
@@ -259,10 +265,10 @@ def upload_and_embed_figures(paper_id, arxiv_id, figures):
             )
             public_url = supabase.storage.from_(FIGURES_BUCKET).get_public_url(path)
         except Exception as e:
-            print(f"    Failed to upload figure {i}: {e}", flush=True)
+            print(f"Failed to upload figure {i}: {e}", flush=True)
             continue
 
-        embedding = clip_embedder.encode(fig["pil_image"]).tolist()
+        embedding = embed_texts([f"{paper_title}. {fig['caption']}"])[0] if fig["caption"] else None
 
         rows.append({
             "paper_id": paper_id,
@@ -274,16 +280,17 @@ def upload_and_embed_figures(paper_id, arxiv_id, figures):
     return rows
 
 
-def process_paper(pdf_url, paper_id):
-    """Download once, extract both text chunks and figure candidates from the
-    same PDF pass, embed the text chunks. Raises on download/parse failure —
-    the caller's try/except handles that, same as before; a paper that fails
-    here stays eligible for retry next run rather than being marked done."""
+def process_paper(pdf_url, paper_id, needs_chunks, needs_figures):
+    """Download once, then extract only what's actually needed for this
+    paper. Respecting needs_chunks/needs_figures individually — rather than
+    just 'this paper needs processing' — is what stops a paper that already
+    has chunks from getting a second, duplicate set inserted just because it
+    still needs figures reprocessed (or vice versa)."""
     pdf_bytes = download_pdf(pdf_url)
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    chunk_rows = extract_text_chunks(doc, paper_id)
-    raw_figures = extract_figures(doc)
+    chunk_rows = extract_text_chunks(doc, paper_id) if needs_chunks else []
+    raw_figures = extract_figures(doc) if needs_figures else []
     doc.close()
 
     if chunk_rows:
@@ -295,19 +302,22 @@ def process_paper(pdf_url, paper_id):
 
 
 def get_papers_needing_processing(paper_records):
-    """Returns papers missing chunks and/or never processed for figures.
-    figures_processed_at — not 'has any figure rows' — is what marks a paper
-    done for figures, since many papers legitimately have zero usable images;
-    using row-count alone would re-download those forever."""
+    """Returns (paper, needs_chunks, needs_figures) for every paper missing
+    at least one of the two — tracked separately, not as one combined flag,
+    so a paper only missing figures never gets its chunks touched at all."""
     if not paper_records:
         return []
     paper_ids = [p["id"] for p in paper_records]
     chunks_result = supabase.table("chunks").select("paper_id").in_("paper_id", paper_ids).execute()
     ids_with_chunks = {row["paper_id"] for row in chunks_result.data}
-    return [
-        p for p in paper_records
-        if p["id"] not in ids_with_chunks or p.get("figures_processed_at") is None
-    ]
+
+    to_process = []
+    for p in paper_records:
+        needs_chunks = p["id"] not in ids_with_chunks
+        needs_figures = p.get("figures_processed_at") is None
+        if needs_chunks or needs_figures:
+            to_process.append((p, needs_chunks, needs_figures))
+    return to_process
 
 
 def run():
@@ -331,46 +341,49 @@ def run():
         .execute()
         .data
     )
-    to_process = get_papers_needing_processing(all_records)[:3]
-    print(f"{len(to_process)} paper(s) need processing (text and/or figures).", flush=True)
+    to_process = get_papers_needing_processing(all_records)[:MAX_PAPERS_TO_PROCESS_PER_RUN]
+    print(f"{len(to_process)} paper(s) need processing this run.", flush=True)
 
-    for paper in to_process:
-        print(f"  Processing: {paper['title'][:60]}...", flush=True)
+    for paper, needs_chunks, needs_figures in to_process:
+        print(f"Processing: {paper['title'][:60]}... (chunks={needs_chunks}, figures={needs_figures})", flush=True)
         time.sleep(3)
         try:
-            chunk_rows, raw_figures = process_paper(paper["pdf_url"], paper["id"])
+            chunk_rows, raw_figures = process_paper(paper["pdf_url"], paper["id"], needs_chunks, needs_figures)
         except Exception as e:
-            print(f"    Failed to process this paper, skipping: {e}", flush=True)
+            print(f"Failed to process this paper, skipping: {e}", flush=True)
             continue
 
-        if chunk_rows:
-            try:
-                supabase.table("chunks").insert(chunk_rows).execute()
-                print(f"    Inserted {len(chunk_rows)} chunks.", flush=True)
-            except Exception as e:
-                print(f"    Failed to insert chunks, skipping: {e}", flush=True)
-        else:
-            print("    No chunks extracted (PDF may have failed to parse).", flush=True)
+        if needs_chunks:
+            if chunk_rows:
+                try:
+                    supabase.table("chunks").insert(chunk_rows).execute()
+                    print(f"Inserted {len(chunk_rows)} chunks.", flush=True)
+                except Exception as e:
+                    print(f"Failed to insert chunks, skipping: {e}", flush=True)
+            else:
+                print("No chunks extracted (PDF may have failed to parse).", flush=True)
 
-        figure_rows = upload_and_embed_figures(paper["id"], paper["arxiv_id"], raw_figures) if raw_figures else []
-        if figure_rows:
-            try:
-                supabase.table("figures").insert(figure_rows).execute()
-                print(f"    Inserted {len(figure_rows)} figures.", flush=True)
-            except Exception as e:
-                print(f"    Failed to insert figures, skipping: {e}", flush=True)
-        else:
-            print("    No qualifying figures found.", flush=True)
+        if needs_figures:
+            figure_rows = upload_and_embed_figures(paper["id"], paper["arxiv_id"], paper["title"], raw_figures) if raw_figures else []
+            if figure_rows:
+                try:
+                    supabase.table("figures").insert(figure_rows).execute()
+                    captioned = sum(1 for r in figure_rows if r["embedding"] is not None)
+                    print(f"Inserted {len(figure_rows)} figures ({captioned} with captions/embeddings).", flush=True)
+                except Exception as e:
+                    print(f"Failed to insert figures, skipping: {e}", flush=True)
+            else:
+                print("No qualifying figures found.", flush=True)
 
-        # Mark figures as processed regardless of whether any qualified —
-        # this is what stops us re-downloading forever for papers that
-        # legitimately have zero usable images.
-        try:
-            supabase.table("papers").update(
-                {"figures_processed_at": datetime.now(timezone.utc).isoformat()}
-            ).eq("id", paper["id"]).execute()
-        except Exception as e:
-            print(f"    Failed to mark figures as processed: {e}", flush=True)
+            # Mark figures as processed regardless of outcome — this is what
+            # stops us re-downloading forever for papers with legitimately
+            # zero usable images or captions.
+            try:
+                supabase.table("papers").update(
+                    {"figures_processed_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("id", paper["id"]).execute()
+            except Exception as e:
+                print(f"Failed to mark figures as processed: {e}", flush=True)
 
 
 if __name__ == "__main__":

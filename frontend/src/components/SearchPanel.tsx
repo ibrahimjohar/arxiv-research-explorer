@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, ExternalLink, SearchX } from "lucide-react";
-import { searchPapers, SearchResult } from "@/lib/api";
+import { searchPapers, SearchResult, FigureResult } from "@/lib/api";
 import { useState, useRef, useEffect, FormEvent } from "react";
 
 const CATEGORIES = [
@@ -157,15 +157,95 @@ function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: st
   );
 }
 
+function FigureStrip({ figures, onSelect }: { figures: FigureResult[]; onSelect: (fig: FigureResult) => void }) {
+  if (figures.length === 0) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="px-4 sm:px-6 pb-3 shrink-0"
+    >
+      <p className="text-[10px] uppercase tracking-wide text-fg/40 mb-2">related figures</p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {figures.map((fig, i) => (
+          <motion.button
+            key={`${fig.storage_path}-${i}`}
+            type="button"
+            onClick={() => onSelect(fig)}
+            title={fig.caption ?? fig.title}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.95 }}
+            className="shrink-0 w-16 h-16 rounded-md overflow-hidden border border-accent-soft/40 hover:border-accent transition-colors bg-accent-soft/5"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={fig.storage_path}
+              alt={fig.caption ?? fig.title}
+              className="w-full h-full object-cover"
+            />
+          </motion.button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.92 }}
+        transition={{ type: "spring", stiffness: 400, damping: 32 }}
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-2xl w-full bg-bg border border-accent-soft rounded-lg shadow-2xl overflow-hidden"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={figure.storage_path}
+          alt={figure.caption ?? figure.title}
+          className="w-full max-h-[60vh] object-contain bg-black/20"
+        />
+        <div className="p-5">
+          {figure.caption && (
+            <p className="text-sm text-fg/80 leading-relaxed mb-3">{figure.caption}</p>
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-accent dark:text-accent-soft truncate">{figure.title}</p>
+            <a
+              href={figure.arxiv_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors shrink-0"
+            >
+              read on arxiv
+              <ExternalLink size={11} />
+            </a>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function SearchPanel() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [datePreset, setDatePreset] = useState("");
   const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [figures, setFigures] = useState<FigureResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(0);
+  const [selectedFigure, setSelectedFigure] = useState<FigureResult | null>(null);
 
   const runSearch = async (q: string) => {
     if (!q.trim() || isLoading) return;
@@ -178,10 +258,12 @@ export default function SearchPanel() {
         category: category || undefined,
         date_from: dateFromPreset(datePreset),
       });
-      setResults(data);
+      setResults(data.results);
+      setFigures(data.figures);
     } catch {
       setError("the server appears to be down. try again shortly.");
       setResults(null);
+      setFigures([]);
     } finally {
       setIsLoading(false);
     }
@@ -261,6 +343,16 @@ export default function SearchPanel() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {!isLoading && <FigureStrip figures={figures} onSelect={setSelectedFigure} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedFigure && (
+          <FigureLightbox figure={selectedFigure} onClose={() => setSelectedFigure(null)} />
+        )}
+      </AnimatePresence>
 
       <div className="flex-1 overflow-hidden px-4 sm:px-6 pb-6 flex items-center justify-center">
         <AnimatePresence mode="wait">
