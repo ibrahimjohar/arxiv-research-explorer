@@ -28,7 +28,7 @@ reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 # Figures are searched via title+caption text, embedded with this same
 # model — no separate CLIP model. See ingest.py for the full history of why.
 
-CANDIDATE_POOL_SIZE = 15    # reduced from 30 to fit Render's free-tier 512MB
+CANDIDATE_POOL_SIZE = 30    # reduced from 30 to fit Render's free-tier 512MB
                             # memory ceiling — a real, named trade-off: a
                             # genuinely good chunk ranked just outside this
                             # pool won't be considered. Easily reversible
