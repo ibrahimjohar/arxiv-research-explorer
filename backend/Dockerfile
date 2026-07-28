@@ -30,6 +30,7 @@ COPY . .
 RUN chown -R appuser:appuser /app /home/appuser
 USER appuser
 
-# Docker Spaces expect the app to listen on 7860 by default.
+# Cloud Run injects $PORT dynamically (typically 8080); fall back to 7860
+# for local runs or HF Spaces where $PORT isn't set.
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}
