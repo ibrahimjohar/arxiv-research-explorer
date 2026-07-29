@@ -1,5 +1,6 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'backend'
     args:
       - 'build'
       - '--platform=linux/amd64'
@@ -8,6 +9,7 @@ steps:
       - '.'
 
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'backend'
     args:
       - 'push'
       - 'us-central1-docker.pkg.dev/arxiv-research-explorer-503807/arxiv-backend-repo/backend:latest'
