@@ -28,15 +28,10 @@ reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 # Figures are searched via title+caption text, embedded with this same
 # model — no separate CLIP model. See ingest.py for the full history of why.
 
-CANDIDATE_POOL_SIZE = 30    # reduced from 30 to fit Render's free-tier 512MB
-                            # memory ceiling — a real, named trade-off: a
-                            # genuinely good chunk ranked just outside this
-                            # pool won't be considered. Easily reversible
-                            # later if moving to a larger instance.
+CANDIDATE_POOL_SIZE = 30
 FINAL_RESULT_COUNT = 5      # after reranking
-RERANKER_BATCH_SIZE = 8     # caps how many pairs the cross-encoder scores at
-                            # once — same rankings either way, just a smaller
-                            # peak memory footprint per request
+RERANKER_BATCH_SIZE = 32    # comfortably fits Cloud Run's 2GB allocation;
+                            # was capped at 8 to fit Render's free-tier 512MB
 
 FIGURE_CANDIDATE_COUNT = 6
 FIGURE_SIMILARITY_THRESHOLD = 0.3  # confirmed against real query/figure pairs — see notes in prior commits
@@ -45,7 +40,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],    # tighten this to the real frontend domain once deployed
+    allow_origins=["https://arxiv-research-explorer.vercel.app"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
