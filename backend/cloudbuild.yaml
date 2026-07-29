@@ -1,0 +1,33 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--platform=linux/amd64'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/arxiv-research-explorer-503807/arxiv-backend-repo/backend:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/arxiv-research-explorer-503807/arxiv-backend-repo/backend:latest'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'arxiv-backend'
+      - '--image=us-central1-docker.pkg.dev/arxiv-research-explorer-503807/arxiv-backend-repo/backend:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--allow-unauthenticated'
+      - '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,GROQ_API_KEY=GROQ_API_KEY:latest'
+
+images:
+  - 'us-central1-docker.pkg.dev/arxiv-research-explorer-503807/arxiv-backend-repo/backend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
