@@ -95,11 +95,13 @@ export default function AskChat({ isExpanded, onToggleExpand }: AskChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (messages.length === 0) return;
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading]);
 
   const submitQuestion = async (question: string) => {
@@ -158,7 +160,7 @@ export default function AskChat({ isExpanded, onToggleExpand }: AskChatProps) {
         <span className="flex-1 text-center text-xs text-fg/40 pr-14">ask — arxiv explorer</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 flex flex-col">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 flex flex-col">
         {messages.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -248,8 +250,6 @@ export default function AskChat({ isExpanded, onToggleExpand }: AskChatProps) {
             )}
           </div>
         )}
-
-        <div ref={scrollRef} />
       </div>
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-accent-soft/20 p-3">
