@@ -3,6 +3,7 @@ import { Lora } from "next/font/google";
 import { Fraunces } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import Script from "next/script";
 
 <Script id="theme-init" strategy="beforeInteractive">
@@ -67,7 +68,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body><Navbar />{children}</body>
+      <body className="flex min-h-screen flex-col">
+        <Navbar />
+        <div className="flex-1">{children}</div>
+        <Footer />
+      </body>
     </html>
   );
 }
