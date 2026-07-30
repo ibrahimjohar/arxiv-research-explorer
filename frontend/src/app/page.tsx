@@ -133,6 +133,7 @@ export default function Home() {
   const graphRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [mode, setMode] = useState<Mode>("search");
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     const el = graphRef.current;
@@ -379,13 +380,25 @@ export default function Home() {
       </main>
 
       <section id="explore" className="relative px-6 sm:px-10 md:px-16 lg:px-24 py-16">
-        <div className="max-w-6xl mx-auto">
+        <motion.div
+          layout
+          transition={{ layout: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+          className={isExpanded ? "w-full" : "max-w-6xl mx-auto"}
+        >
           <div className="flex justify-center mb-10">
             <ModeToggle mode={mode} setMode={setMode} />
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="order-2 lg:order-1">
+          <motion.div
+            layout
+            transition={{ layout: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+            className={isExpanded ? "grid grid-cols-1" : "grid lg:grid-cols-2 gap-16 items-center"}
+          >
+            <motion.div
+              layout
+              transition={{ layout: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+              className={isExpanded ? "" : "order-2 lg:order-1"}
+            >
               <AnimatePresence mode="wait">
                 {mode === "search" ? (
                   <motion.div
@@ -395,7 +408,7 @@ export default function Home() {
                     exit={{ opacity: 0, y: -12, scale: 0.98 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   >
-                    <SearchPanel />
+                    <SearchPanel isExpanded={isExpanded} onToggleExpand={() => setIsExpanded((v) => !v)} />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -405,35 +418,46 @@ export default function Home() {
                     exit={{ opacity: 0, y: -12, scale: 0.98 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   >
-                    <AskChat />
+                    <AskChat isExpanded={isExpanded} onToggleExpand={() => setIsExpanded((v) => !v)} />
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </motion.div>
 
-            <div className="order-1 lg:order-2">
-              <AnimatePresence mode="wait">
+            <AnimatePresence>
+              {!isExpanded && (
                 <motion.div
-                  key={mode}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  key="text-col"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="order-1 lg:order-2"
                 >
-                  <span className="inline-block text-xs sm:text-sm tracking-[0.15em] uppercase text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6">
-                    {activeCopy.eyebrow}
-                  </span>
-                  <h2 className="mb-6 leading-[1.05] tracking-tight text-4xl sm:text-5xl">
-                    <span className="font-heading font-normal">{activeCopy.heading[0]} </span>
-                    <span className="font-heading italic text-accent dark:text-accent-soft">{activeCopy.heading[1]}</span>
-                  </h2>
-                  <p className="text-base sm:text-lg text-fg/70 leading-relaxed mb-3">{activeCopy.body[0]}</p>
-                  <p className="text-sm sm:text-base text-fg/50 leading-relaxed">{activeCopy.body[1]}</p>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={mode}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    >
+                      <span className="inline-block text-xs sm:text-sm tracking-[0.15em] uppercase text-accent dark:text-accent-soft bg-accent-soft/20 dark:bg-accent-soft/10 border border-accent-soft/60 rounded-full px-2.5 py-0.5 mb-6">
+                        {activeCopy.eyebrow}
+                      </span>
+                      <h2 className="mb-6 leading-[1.05] tracking-tight text-4xl sm:text-5xl">
+                        <span className="font-heading font-normal">{activeCopy.heading[0]} </span>
+                        <span className="font-heading italic text-accent dark:text-accent-soft">{activeCopy.heading[1]}</span>
+                      </h2>
+                      <p className="text-base sm:text-lg text-fg/70 leading-relaxed mb-3">{activeCopy.body[0]}</p>
+                      <p className="text-sm sm:text-base text-fg/50 leading-relaxed">{activeCopy.body[1]}</p>
+                    </motion.div>
+                  </AnimatePresence>
                 </motion.div>
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </motion.div>
       </section>
     </div>
   );

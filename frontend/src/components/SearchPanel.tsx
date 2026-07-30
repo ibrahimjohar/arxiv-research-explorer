@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, ExternalLink, SearchX } from "lucide-react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, ExternalLink, SearchX, X, Maximize2, Minimize2 } from "lucide-react";
 import { searchPapers, SearchResult, FigureResult } from "@/lib/api";
 import { useState, useRef, useEffect, FormEvent } from "react";
 
@@ -37,8 +37,6 @@ function dateFromPreset(days: string): string | undefined {
   return d.toISOString().split("T")[0];
 }
 
-// Slide direction is tracked separately from index so entering/exiting cards
-// know which side to animate from/to — standard carousel pattern.
 const slideVariants = {
   enter: (direction: number) => ({ x: direction > 0 ? 60 : -60, opacity: 0 }),
   center: { x: 0, opacity: 1 },
@@ -47,10 +45,6 @@ const slideVariants = {
 
 function ResultCard({ result }: { result: SearchResult }) {
   return (
-    // overflow-hidden as a hard backstop, break-words on every text element
-    // as the actual fix — garbled/unbroken character runs (a known PDF
-    // extraction artifact, not a frontend bug) can no longer spill past
-    // the card border regardless of how long or space-free they are.
     <div className="rounded-lg border border-accent-soft bg-bg shadow-lg p-6 sm:p-8 flex flex-col h-full overflow-hidden">
       <div className="flex items-start justify-between gap-3 mb-4">
         {result.section && (
@@ -68,6 +62,7 @@ function ResultCard({ result }: { result: SearchResult }) {
       <p className="font-body text-sm sm:text-base text-fg/70 leading-relaxed break-words overflow-y-auto flex-1 pr-1">
         {result.matching_snippet}
       </p>
+      
       <a
         href={result.arxiv_url}
         target="_blank"
@@ -219,6 +214,7 @@ function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: ()
           )}
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-accent dark:text-accent-soft truncate">{figure.title}</p>
+            
             <a
               href={figure.arxiv_url}
               target="_blank"
@@ -235,7 +231,12 @@ function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: ()
   );
 }
 
-export default function SearchPanel() {
+interface SearchPanelProps {
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}
+
+export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [datePreset, setDatePreset] = useState("");
@@ -287,16 +288,32 @@ export default function SearchPanel() {
   };
 
   return (
-    // Fixed h-[70vh] shell, identical to AskChat's — this is the actual fix
-    // for the page-height jump when switching modes. Every internal state
-    // (initial prompt, loading, a single result, error) lives inside the
-    // same flex-1 centered area below, so none of them can change the
-    // panel's overall footprint.
-    <div className="w-full flex flex-col h-[70vh] border border-accent-soft/30 rounded-lg overflow-hidden bg-bg shadow-xl">
+    <motion.div
+      layout
+      transition={{ layout: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+      className="w-full flex flex-col h-[70vh] border border-accent-soft/30 rounded-lg overflow-hidden bg-bg shadow-xl"
+    >
       <div className="flex items-center gap-2 px-4 py-3 border-b border-accent-soft/20 bg-accent-soft/5 shrink-0">
-        <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
+        <button
+          type="button"
+          aria-label="Close"
+          className="group relative w-3 h-3 rounded-full bg-[#ff5f57] flex items-center justify-center cursor-default"
+        >
+          <X size={7} strokeWidth={3} className="text-[#4d0000] opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
         <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
-        <span className="w-3 h-3 rounded-full bg-[#28c840]" />
+        <button
+          type="button"
+          aria-label={isExpanded ? "Restore" : "Expand"}
+          onClick={onToggleExpand}
+          className="group relative w-3 h-3 rounded-full bg-[#28c840] flex items-center justify-center"
+        >
+          {isExpanded ? (
+            <Minimize2 size={7} strokeWidth={3} className="text-[#0f4d17] opacity-0 group-hover:opacity-100 transition-opacity" />
+          ) : (
+            <Maximize2 size={7} strokeWidth={3} className="text-[#0f4d17] opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </button>
         <span className="flex-1 text-center text-xs text-fg/40 pr-14">search — arxiv explorer</span>
       </div>
 
@@ -463,6 +480,6 @@ export default function SearchPanel() {
           )}
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }

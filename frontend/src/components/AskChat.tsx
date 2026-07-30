@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, AlertCircle, ExternalLink } from "lucide-react";
+import { Send, AlertCircle, ExternalLink, X, Maximize2, Minimize2 } from "lucide-react";
 import { askQuestion, AskSource, FigureResult } from "@/lib/api";
 
 type Message =
@@ -16,8 +16,6 @@ const EXAMPLE_QUESTIONS = [
   "what optimizers are common for training large models?",
 ];
 
-// Apple Messages-style bubble pop: scales in with a springy overshoot rather
-// than a plain fade/slide.
 const bubblePop = {
   initial: { opacity: 0, scale: 0.7, y: 8 },
   animate: { opacity: 1, scale: 1, y: 0 },
@@ -88,7 +86,12 @@ function FigureCard({ figure }: { figure: FigureResult }) {
   );
 }
 
-export default function AskChat() {
+interface AskChatProps {
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}
+
+export default function AskChat({ isExpanded, onToggleExpand }: AskChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -105,8 +108,6 @@ export default function AskChat() {
     setInput("");
     setIsLoading(true);
     try {
-      // askQuestion silently retries through cold-start-style failures — by
-      // the time this ever throws, real retries have already been exhausted
       const res = await askQuestion(question);
       setMessages((prev) => [
         ...prev,
@@ -128,11 +129,32 @@ export default function AskChat() {
   };
 
   return (
-    <div className="w-full flex flex-col h-[70vh] border border-accent-soft/30 rounded-lg overflow-hidden bg-bg shadow-xl">
+    <motion.div
+      layout
+      transition={{ layout: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+      className="w-full flex flex-col h-[70vh] border border-accent-soft/30 rounded-lg overflow-hidden bg-bg shadow-xl"
+    >
       <div className="flex items-center gap-2 px-4 py-3 border-b border-accent-soft/20 bg-accent-soft/5 shrink-0">
-        <span className="w-3 h-3 rounded-full bg-[#ff5f57]" />
+        <button
+          type="button"
+          aria-label="Close"
+          className="group relative w-3 h-3 rounded-full bg-[#ff5f57] flex items-center justify-center cursor-default"
+        >
+          <X size={7} strokeWidth={3} className="text-[#4d0000] opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
         <span className="w-3 h-3 rounded-full bg-[#febc2e]" />
-        <span className="w-3 h-3 rounded-full bg-[#28c840]" />
+        <button
+          type="button"
+          aria-label={isExpanded ? "Restore" : "Expand"}
+          onClick={onToggleExpand}
+          className="group relative w-3 h-3 rounded-full bg-[#28c840] flex items-center justify-center"
+        >
+          {isExpanded ? (
+            <Minimize2 size={7} strokeWidth={3} className="text-[#0f4d17] opacity-0 group-hover:opacity-100 transition-opacity" />
+          ) : (
+            <Maximize2 size={7} strokeWidth={3} className="text-[#0f4d17] opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </button>
         <span className="flex-1 text-center text-xs text-fg/40 pr-14">ask — arxiv explorer</span>
       </div>
 
@@ -164,10 +186,6 @@ export default function AskChat() {
             </div>
           </motion.div>
         ) : (
-          // mt-auto pins this block to the bottom of the scroll area whenever
-          // the conversation is shorter than the pane — matching how every
-          // real chat app looks with few messages. Once content overflows,
-          // mt-auto has no room left to apply and normal scrolling takes over.
           <div className="mt-auto flex flex-col gap-3">
             <AnimatePresence initial={false}>
               {messages.map((msg, i) => (
@@ -252,6 +270,6 @@ export default function AskChat() {
           <Send size={15} />
         </motion.button>
       </form>
-    </div>
+    </motion.div>
   );
 }
