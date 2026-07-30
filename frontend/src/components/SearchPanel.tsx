@@ -67,7 +67,7 @@ function ResultCard({ result }: { result: SearchResult }) {
         href={result.arxiv_url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-xs text-accent dark:text-accent-soft hover:underline w-fit mt-4 shrink-0"
+        className="inline-flex items-center gap-1.5 text-xs text-accent dark:text-accent-soft hover:underline w-fit mt-4 shrink-0 cursor-pointer"
       >
         read on arxiv
         <ExternalLink size={11} />
@@ -114,7 +114,7 @@ function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: st
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 bg-accent-soft/10 border border-accent-soft/40 rounded-full pl-4 pr-3 py-2 text-xs uppercase tracking-wide text-fg/70 hover:border-accent transition-colors"
+        className="flex items-center gap-2 bg-accent-soft/10 border border-accent-soft/40 rounded-full pl-4 pr-3 py-2 text-xs uppercase tracking-wide text-fg/70 hover:border-accent transition-colors cursor-pointer"
       >
         {selected.label}
         <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
@@ -138,7 +138,7 @@ function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: st
                   onChange(c.value);
                   setOpen(false);
                 }}
-                className={`w-full text-left px-4 py-2 text-xs uppercase tracking-wide transition-colors ${
+                className={`w-full text-left px-4 py-2 text-xs uppercase tracking-wide transition-colors cursor-pointer ${
                   c.value === value ? "bg-accent text-accent-fg" : "text-fg/70 hover:bg-accent-soft/10"
                 }`}
               >
@@ -170,7 +170,7 @@ function FigureStrip({ figures, onSelect }: { figures: FigureResult[]; onSelect:
             title={fig.caption ?? fig.title}
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.95 }}
-            className="shrink-0 w-16 h-16 rounded-md overflow-hidden border border-accent-soft/40 hover:border-accent transition-colors bg-accent-soft/5"
+            className="shrink-0 w-16 h-16 rounded-md overflow-hidden border border-accent-soft/40 hover:border-accent transition-colors bg-accent-soft/5 cursor-pointer"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -192,7 +192,7 @@ function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: ()
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 cursor-pointer"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.92 }}
@@ -200,7 +200,7 @@ function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: ()
         exit={{ opacity: 0, scale: 0.92 }}
         transition={{ type: "spring", stiffness: 400, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
-        className="max-w-2xl w-full bg-bg border border-accent-soft rounded-lg shadow-2xl overflow-hidden"
+        className="max-w-2xl w-full bg-bg border border-accent-soft rounded-lg shadow-2xl overflow-hidden cursor-default"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -219,7 +219,7 @@ function FigureLightbox({ figure, onClose }: { figure: FigureResult; onClose: ()
               href={figure.arxiv_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors shrink-0"
+              className="inline-flex items-center gap-1.5 text-xs text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors shrink-0 cursor-pointer"
             >
               read on arxiv
               <ExternalLink size={11} />
@@ -306,7 +306,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
           type="button"
           aria-label={isExpanded ? "Restore" : "Expand"}
           onClick={onToggleExpand}
-          className="group relative w-3 h-3 rounded-full bg-[#28c840] flex items-center justify-center"
+          className="group relative w-3 h-3 rounded-full bg-[#28c840] flex items-center justify-center cursor-pointer"
         >
           {isExpanded ? (
             <Minimize2 size={7} strokeWidth={3} className="text-[#0f4d17] opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -333,7 +333,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
             disabled={isLoading || !query.trim()}
             whileHover={!isLoading && query.trim() ? { scale: 1.03 } : undefined}
             whileTap={!isLoading && query.trim() ? { scale: 0.97 } : undefined}
-            className="bg-accent text-accent-fg font-medium px-6 py-2.5 rounded-full text-sm disabled:opacity-40 transition-opacity shrink-0"
+            className="bg-accent text-accent-fg font-medium px-6 py-2.5 rounded-full text-sm disabled:opacity-40 transition-opacity shrink-0 cursor-pointer disabled:cursor-not-allowed"
           >
             search
           </motion.button>
@@ -348,7 +348,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                 key={preset.value}
                 type="button"
                 onClick={() => setDatePreset(preset.value)}
-                className={`text-xs px-3 py-2 rounded-full border transition-colors ${
+                className={`text-xs px-3 py-2 rounded-full border transition-colors cursor-pointer ${
                   datePreset === preset.value
                     ? "bg-accent text-accent-fg border-accent"
                     : "border-accent-soft/40 text-fg/60 hover:border-accent"
@@ -435,7 +435,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                   disabled={index === 0}
                   whileHover={index > 0 ? { scale: 1.1 } : undefined}
                   whileTap={index > 0 ? { scale: 0.9 } : undefined}
-                  className="w-8 h-8 flex items-center justify-center rounded-full border border-accent-soft/40 text-fg/60 hover:border-accent hover:text-accent dark:hover:text-accent-soft disabled:opacity-30 disabled:hover:border-accent-soft/40 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-full border border-accent-soft/40 text-fg/60 hover:border-accent hover:text-accent dark:hover:text-accent-soft disabled:opacity-30 disabled:hover:border-accent-soft/40 transition-colors cursor-pointer disabled:cursor-not-allowed"
                 >
                   <ChevronLeft size={16} />
                 </motion.button>
@@ -447,7 +447,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                   disabled={index === results.length - 1}
                   whileHover={index < results.length - 1 ? { scale: 1.1 } : undefined}
                   whileTap={index < results.length - 1 ? { scale: 0.9 } : undefined}
-                  className="w-8 h-8 flex items-center justify-center rounded-full border border-accent-soft/40 text-fg/60 hover:border-accent hover:text-accent dark:hover:text-accent-soft disabled:opacity-30 disabled:hover:border-accent-soft/40 transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-full border border-accent-soft/40 text-fg/60 hover:border-accent hover:text-accent dark:hover:text-accent-soft disabled:opacity-30 disabled:hover:border-accent-soft/40 transition-colors cursor-pointer disabled:cursor-not-allowed"
                 >
                   <ChevronRight size={16} />
                 </motion.button>
@@ -470,7 +470,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                     onClick={() => runSearch(q)}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="text-sm text-left text-fg/70 border border-accent-soft/40 hover:border-accent rounded-md px-4 py-2.5 transition-colors"
+                    className="text-sm text-left text-fg/70 border border-accent-soft/40 hover:border-accent rounded-md px-4 py-2.5 transition-colors cursor-pointer"
                   >
                     {q}
                   </motion.button>
