@@ -89,15 +89,15 @@ function ResultListItem({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 border-b border-accent-soft/15 transition-colors cursor-pointer ${
+      className={`w-full text-left px-5 py-4 border-b border-accent-soft/15 transition-colors cursor-pointer ${
         active ? "bg-accent-soft/15" : "hover:bg-accent-soft/5"
       }`}
     >
-      <div className="flex items-start justify-between gap-2 mb-1">
+      <div className="flex items-start justify-between gap-3 mb-1.5">
         <span className={`text-sm font-heading leading-snug line-clamp-2 ${active ? "text-accent dark:text-accent-soft" : "text-fg"}`}>
           {result.title}
         </span>
-        <span className="text-[10px] text-fg/40 shrink-0 pt-0.5">{result.published_date}</span>
+        <span className="text-[10px] text-fg/40 shrink-0 pt-0.5 tabular-nums">{result.published_date}</span>
       </div>
       <p className="text-xs text-fg/50 line-clamp-1">
         {result.authors.slice(0, 2).join(", ")}
@@ -219,27 +219,29 @@ function FigureStrip({ figures, onSelect }: { figures: FigureResult[]; onSelect:
 function FigureGrid({ figures, onSelect }: { figures: FigureResult[]; onSelect: (fig: FigureResult) => void }) {
   if (figures.length === 0) return null;
   return (
-    <div className="mt-6">
-      <p className="text-[10px] uppercase tracking-wide text-fg/40 mb-3">related figures</p>
-      <div className="grid grid-cols-3 gap-3">
+    <div className="mt-10 pt-8 border-t border-accent-soft/15">
+      <p className="text-[10px] uppercase tracking-[0.15em] text-fg/40 mb-4">related figures</p>
+      <div className="grid grid-cols-2 gap-4">
         {figures.map((fig, i) => (
           <motion.button
             key={`${fig.storage_path}-${i}`}
             type="button"
             onClick={() => onSelect(fig)}
             title={fig.caption ?? fig.title}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="rounded-md overflow-hidden border border-accent-soft/40 hover:border-accent transition-colors bg-accent-soft/5 cursor-pointer text-left"
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.15 }}
+            className="rounded-lg overflow-hidden border border-accent-soft/40 hover:border-accent transition-colors bg-accent-soft/5 cursor-pointer text-left flex flex-col"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={fig.storage_path}
-              alt={fig.caption ?? fig.title}
-              className="w-full h-28 object-cover"
-            />
+            <div className="aspect-video w-full overflow-hidden bg-black/10">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={fig.storage_path}
+                alt={fig.caption ?? fig.title}
+                className="w-full h-full object-cover"
+              />
+            </div>
             {fig.caption && (
-              <p className="text-[10px] text-fg/50 leading-snug px-2 py-1.5 line-clamp-2">{fig.caption}</p>
+              <p className="text-[11px] text-fg/50 leading-relaxed px-3 py-2.5 line-clamp-2">{fig.caption}</p>
             )}
           </motion.button>
         ))}
@@ -424,8 +426,6 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
         </div>
       </div>
 
-      {/* Figure strip only shown in the collapsed carousel view — expanded
-          mode shows figures inline in the right-hand detail pane instead. */}
       {!isExpanded && (
         <AnimatePresence>
           {!isLoading && <FigureStrip figures={figures} onSelect={setSelectedFigure} />}
@@ -438,7 +438,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
         )}
       </AnimatePresence>
 
-      <div className="flex-1 overflow-hidden px-4 sm:px-6 pb-6 flex items-center justify-center">
+      <div className={isExpanded ? "flex-1 overflow-hidden border-t border-accent-soft/15" : "flex-1 overflow-hidden px-4 sm:px-6 pb-6 flex items-center justify-center"}>
         <AnimatePresence mode="wait">
           {isLoading && (
             <motion.div
@@ -446,7 +446,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full h-full"
+              className="w-full h-full px-4 sm:px-6 pb-6 flex items-center justify-center"
             >
               <SkeletonCard />
             </motion.div>
@@ -457,7 +457,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
               key="error"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 border border-fg/20 rounded-lg px-4 py-3 text-sm text-fg/70"
+              className="flex items-center gap-2 border border-fg/20 rounded-lg px-4 py-3 text-sm text-fg/70 mx-4 sm:mx-6 mb-6"
             >
               <AlertCircle size={15} className="shrink-0" />
               {error}
@@ -469,7 +469,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
               key="empty"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center text-center gap-2"
+              className="flex flex-col items-center text-center gap-2 w-full h-full justify-center"
             >
               <SearchX size={22} className="text-fg/30 mb-1" />
               <p className="font-heading italic text-fg/60">no results for that query</p>
@@ -480,19 +480,24 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
           {!isLoading && !error && results !== null && results.length > 0 && isExpanded && (
             <motion.div key="split" className="w-full h-full flex">
               {/* Left: scrollable result list */}
-              <div className="w-72 shrink-0 border-r border-accent-soft/20 overflow-y-auto -mx-4 sm:-mx-6 px-0">
-                {results.map((r, i) => (
-                  <ResultListItem
-                    key={r.arxiv_url}
-                    result={r}
-                    active={i === index}
-                    onClick={() => setIndex(i)}
-                  />
-                ))}
+              <div className="w-72 shrink-0 border-r border-accent-soft/20 overflow-y-auto flex flex-col">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-fg/40 px-5 pt-4 pb-2 shrink-0">
+                  {results.length} results
+                </p>
+                <div className="flex-1">
+                  {results.map((r, i) => (
+                    <ResultListItem
+                      key={r.arxiv_url}
+                      result={r}
+                      active={i === index}
+                      onClick={() => setIndex(i)}
+                    />
+                  ))}
+                </div>
               </div>
 
               {/* Right: full detail + figures for the selected result */}
-              <div className="flex-1 overflow-y-auto pl-6">
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8">
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={index}
@@ -510,11 +515,11 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                       <span className="text-xs text-fg/40 shrink-0">{results[index].published_date}</span>
                     </div>
                     <h3 className="font-heading text-2xl leading-snug mb-2 break-words">{results[index].title}</h3>
-                    <p className="text-sm text-accent dark:text-accent-soft mb-4 break-words">
+                    <p className="text-sm text-accent dark:text-accent-soft mb-5 break-words">
                       {results[index].authors.slice(0, 6).join(", ")}
                       {results[index].authors.length > 6 ? " et al." : ""}
                     </p>
-                    <p className="font-body text-base text-fg/70 leading-relaxed break-words">
+                    <p className="font-body text-base text-fg/70 leading-relaxed break-words max-w-2xl">
                       {results[index].matching_snippet}
                     </p>
                     
@@ -522,7 +527,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                       href={results[index].arxiv_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-accent dark:text-accent-soft hover:underline w-fit mt-4 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 text-xs text-accent dark:text-accent-soft hover:underline w-fit mt-5 cursor-pointer"
                     >
                       read on arxiv
                       <ExternalLink size={11} />
@@ -585,7 +590,7 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
               key="initial"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center text-center gap-4 w-full max-w-md"
+              className="flex flex-col items-center text-center gap-4 w-full max-w-md h-full justify-center mx-auto"
             >
               <p className="font-heading italic text-lg text-fg/60">search across the indexed papers</p>
               <div className="flex flex-col gap-2 w-full">
