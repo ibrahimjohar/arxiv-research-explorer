@@ -40,7 +40,7 @@ function ThemeToggle() {
       whileHover={{ scale: 1.12, rotate: -12 }}
       whileTap={{ scale: 0.92 }}
       transition={{ type: "spring", stiffness: 400, damping: 15 }}
-      className="relative w-7 h-7 flex items-center justify-center text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors"
+      className="relative w-7 h-7 flex items-center justify-center text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors cursor-pointer"
     >
       <Sun size={18} className="absolute transition-opacity duration-200 opacity-100 dark:opacity-0" />
       <Moon size={18} className="absolute transition-opacity duration-200 opacity-0 dark:opacity-100" />
@@ -58,7 +58,7 @@ export default function Navbar() {
     >
       <div className="flex items-center justify-between px-6 sm:px-10 md:px-16 lg:px-24 h-20">
         <motion.div whileHover={{ x: 2 }} transition={{ type: "spring", stiffness: 400, damping: 20 }}>
-          <Link href="/" className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5 cursor-pointer">
             <LogoMark />
             <span className="flex items-baseline gap-2">
                 <span className={`font-heading ${LOGO_PRIMARY_SIZE} text-fg tracking-tighter`}>arXiv</span>
@@ -78,7 +78,7 @@ export default function Navbar() {
             whileHover={{ scale: 1.12 }}
             whileTap={{ scale: 0.92 }}
             transition={{ type: "spring", stiffness: 400, damping: 15 }}
-            className="text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors"
+            className="text-fg/60 hover:text-accent dark:hover:text-accent-soft transition-colors cursor-pointer"
           >
             <GithubIcon size={18} />
           </motion.a>

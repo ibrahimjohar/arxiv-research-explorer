@@ -108,7 +108,7 @@ function ModeToggle({ mode, setMode }: { mode: Mode; setMode: (m: Mode) => void 
         <button
           key={o.key}
           onClick={() => setMode(o.key)}
-          className="relative px-6 py-2 text-sm rounded-full"
+          className="relative px-6 py-2 text-sm rounded-full cursor-pointer"
         >
           {mode === o.key && (
             <motion.div
@@ -280,7 +280,7 @@ export default function Home() {
                     animate={shouldReduceMotion ? {} : { opacity: [0.25, 0.6, 0.25] }}
                     transition={{ duration: 2.5 + (i % 3), repeat: Infinity, ease: "easeInOut", delay: i * 0.2 }}
                   />
-                  <div className="absolute inset-0 -m-2.5" style={{ cursor: "pointer" }} />
+                  <div className="absolute inset-0 -m-2.5 cursor-pointer" />
                   <AnimatePresence>
                     {isHovered && (
                       <motion.div
@@ -346,7 +346,7 @@ export default function Home() {
                   : { scale: 1.04, boxShadow: "0 0 28px var(--color-accent)", transition: { duration: 0.25 } }
               }
               whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
-              className="group bg-accent text-accent-fg font-medium px-8 py-4 rounded-full text-base sm:text-lg transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent inline-flex items-center gap-2"
+              className="group bg-accent text-accent-fg font-medium px-8 py-4 rounded-full text-base sm:text-lg transition-colors hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent inline-flex items-center gap-2 cursor-pointer"
             >
               start searching
               <ArrowRight size={17} strokeWidth={2.5} className="transition-transform duration-300 group-hover:translate-x-1" />
@@ -365,7 +365,7 @@ export default function Home() {
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.6, delay: 0.4 + i * 0.15 }}
                     whileHover={shouldReduceMotion ? undefined : { scale: 1.05, transition: { duration: 0.2 } }}
-                    className="w-96 font-heading rounded-lg border border-accent-soft bg-bg shadow-lg p-6 cursor-default hover:border-accent transition-colors"
+                    className="w-96 font-heading rounded-lg border border-accent-soft bg-bg shadow-lg p-6 cursor-pointer hover:border-accent transition-colors"
                   >
                     <span className="inline-block text-sm italic tracking-wide text-accent-fg bg-accent rounded px-2 py-0.5 mb-2">
                       {chunk.section}
