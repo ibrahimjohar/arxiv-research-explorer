@@ -126,6 +126,40 @@ function SkeletonCard() {
   );
 }
 
+function SkeletonSplit() {
+  return (
+    <div className="w-full h-full flex">
+      <div className="w-72 shrink-0 border-r border-accent-soft/20 p-5 space-y-4">
+        {[0, 1, 2, 3].map((i) => (
+          <motion.div
+            key={i}
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.1 }}
+            className="space-y-2"
+          >
+            <div className="h-4 w-full rounded bg-accent-soft/20" />
+            <div className="h-3 w-2/3 rounded bg-accent-soft/20" />
+          </motion.div>
+        ))}
+      </div>
+      <div className="flex-1 p-6 sm:p-8">
+        <motion.div
+          animate={{ opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+          className="space-y-4 max-w-2xl"
+        >
+          <div className="h-4 w-20 rounded bg-accent-soft/20" />
+          <div className="h-8 w-3/4 rounded bg-accent-soft/20" />
+          <div className="h-4 w-1/3 rounded bg-accent-soft/20" />
+          <div className="h-3 w-full rounded bg-accent-soft/20" />
+          <div className="h-3 w-full rounded bg-accent-soft/20" />
+          <div className="h-3 w-2/3 rounded bg-accent-soft/20" />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
 function CategoryDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -440,7 +474,19 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
 
       <div className={isExpanded ? "flex-1 overflow-hidden border-t border-accent-soft/15" : "flex-1 overflow-hidden px-4 sm:px-6 pb-6 flex items-center justify-center"}>
         <AnimatePresence mode="wait">
-          {isLoading && (
+          {isLoading && isExpanded && (
+            <motion.div
+              key="loading-split"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full"
+            >
+              <SkeletonSplit />
+            </motion.div>
+          )}
+
+          {isLoading && !isExpanded && (
             <motion.div
               key="loading"
               initial={{ opacity: 0 }}
@@ -496,7 +542,9 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                 </div>
               </div>
 
-              {/* Right: full detail + figures for the selected result */}
+              {/* Right: article detail (animates per-result) + figures
+                  (stays mounted across result switches, since the figures
+                  for a query don't change when you pick a different card) */}
               <div className="flex-1 overflow-y-auto p-6 sm:p-8">
                 <AnimatePresence mode="wait">
                   <motion.div
@@ -532,10 +580,13 @@ export default function SearchPanel({ isExpanded, onToggleExpand }: SearchPanelP
                       read on arxiv
                       <ExternalLink size={11} />
                     </a>
-
-                    <FigureGrid figures={figures} onSelect={setSelectedFigure} />
                   </motion.div>
                 </AnimatePresence>
+
+                {/* Deliberately outside the keyed/AnimatePresence block above —
+                    figures are shared across all results for this query, so
+                    they should stay put rather than reload on every click. */}
+                <FigureGrid figures={figures} onSelect={setSelectedFigure} />
               </div>
             </motion.div>
           )}
