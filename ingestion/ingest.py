@@ -308,8 +308,18 @@ def get_papers_needing_processing(paper_records):
     if not paper_records:
         return []
     paper_ids = [p["id"] for p in paper_records]
-    chunks_result = supabase.table("chunks").select("paper_id").in_("paper_id", paper_ids).execute()
-    ids_with_chunks = {row["paper_id"] for row in chunks_result.data}
+
+    # Batched to avoid a single oversized .in_() query string — Supabase's
+    # REST layer rejects requests once the URL grows too long, which starts
+    # happening once the corpus has a few hundred papers' worth of UUIDs in
+    # one filter. 200 UUIDs per batch stays comfortably under any URL-length
+    # ceiling regardless of how large the corpus grows.
+    BATCH_SIZE = 200
+    ids_with_chunks = set()
+    for i in range(0, len(paper_ids), BATCH_SIZE):
+        batch = paper_ids[i:i + BATCH_SIZE]
+        batch_result = supabase.table("chunks").select("paper_id").in_("paper_id", batch).execute()
+        ids_with_chunks.update(row["paper_id"] for row in batch_result.data)
 
     to_process = []
     for p in paper_records:
