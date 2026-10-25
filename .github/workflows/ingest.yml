@@ -10,6 +10,9 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+permissions:
+  contents: write
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
@@ -39,3 +42,14 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           PYTHONUNBUFFERED: "1"
         run: python ingestion/ingest.py
+
+      # GitHub disables scheduled workflows after 60 days without commits,
+      # which would stop ingestion and let Supabase auto-pause. Commit a heartbeat.
+      - name: Keep repo active
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/last_ingest_run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last_ingest_run.txt
+          git commit -m "chore: ingestion heartbeat [skip ci]"
+          git push
